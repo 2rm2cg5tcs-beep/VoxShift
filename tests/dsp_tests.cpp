@@ -365,8 +365,33 @@ static int coreTool(int argc, char** argv) {
     return 0;
 }
 
+// --render in.f32 outdir [quality]  → renders every built-in preset to outdir/NN.f32
+static int renderTool(int argc, char** argv) {
+    if (argc < 4) return 2;
+    std::ifstream in(argv[2], std::ios::binary | std::ios::ate);
+    const std::streamsize bytes = in.tellg();
+    in.seekg(0);
+    std::vector<float> x(size_t(bytes) / 4);
+    in.read(reinterpret_cast<char*>(x.data()), std::streamsize(x.size() * 4));
+    const Quality q = (argc > 4 && std::atoi(argv[4])) ? Quality::High : Quality::Balanced;
+    int idx = 0;
+    for (const auto& p : builtinPresets()) {
+        VoiceChain c(SR, q);
+        c.setVoice(p.full());
+        std::vector<float> y = x;
+        for (size_t i = 0; i < y.size(); i += 480) c.process(y.data() + i, std::min<size_t>(480, y.size() - i));
+        char path[1024];
+        std::snprintf(path, sizeof path, "%s/%02d.f32", argv[3], idx++);
+        std::ofstream out(path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(y.data()), std::streamsize(y.size() * 4));
+    }
+    std::printf("%d presets rendered, latency %d samples\n", idx, VoiceChain(SR, q).latencySamples());
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--core") == 0) return coreTool(argc, argv);
+    if (argc > 1 && std::strcmp(argv[1], "--render") == 0) return renderTool(argc, argv);
     testFft();
     testIdentity();
     testPitch();

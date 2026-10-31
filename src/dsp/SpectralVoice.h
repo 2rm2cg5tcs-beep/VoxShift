@@ -52,6 +52,7 @@ public:
 private:
     void processFrame();
     void denoiseGain(double amount);
+    void detectTransient();
     void envelope();
     void transform(double beta);
     void shiftPeaks(double beta);
@@ -72,6 +73,11 @@ private:
     bool noiseValid_ = false;
     double vibPhase_ = 0.0;
     std::mt19937 rng_;
+    double hfSmooth_ = 0.0, hfPeak_ = 0.0;
+    std::vector<double> prevMag_;
+    std::vector<uint8_t> resetBin_;
+    bool transient_ = false;
+    int framesSinceTransient_ = 100;
 
     // per-frame scratch (preallocated)
     std::vector<double> frame_, mag_, phase_, trueBin_, gain_, env_, envNew_, exc_, logMag_, cep_;

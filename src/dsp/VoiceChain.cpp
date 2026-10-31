@@ -139,7 +139,7 @@ void VoiceChain::reset() {
     core_.reset();
     for (Biquad* b : {&rumble_, &lowShelf_, &midPeak_, &highShelf_}) b->reset();
     hp_.reset(); lp_.reset(); gate_.reset(); chorus_.reset(); echo_.reset(); reverb_.reset();
-    comp_.reset(); limiter_.reset();
+    comp_.reset(); limiter_.reset(); drive_.reset();
     holdCounter_ = 0; holdValue_ = 0.0;
 }
 
@@ -220,7 +220,7 @@ void VoiceChain::runBlock(float* x, size_t n) {
         if (a.eqHigh) s = highShelf_.tick(s);
         if (a.hp) s = hp_.tick(s);
         if (a.lp) s = lp_.tick(s);
-        if (a.dist) s = std::tanh(s * distDrive_);
+        if (a.dist) s = drive_.tick(s, distDrive_);
         if (a.crush) s = std::round(s / crushStep_) * crushStep_;
         if (a.lofi && holdFactor_ > 1) {
             if (holdCounter_ == 0) holdValue_ = s;

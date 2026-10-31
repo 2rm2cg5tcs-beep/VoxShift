@@ -277,6 +277,59 @@ private:
     double fb_ = 0.84, damp_ = 0.2, wet_ = 0.3, dry_ = 1.0;
 };
 
+// tanh saturation run at 4× the sample rate. A waveshaper creates harmonics far
+// above Nyquist; at 1× they fold back as inharmonic, "fizzy" aliasing (worst on
+// radio/megaphone/orc voices). Polyphase Kaiser-windowed FIR up/down sampling,
+// ≈16 samples of latency at the base rate.
+class OversampledDrive {
+public:
+    static constexpr int R = 4, TAPS = 64, P = TAPS / R;
+
+    OversampledDrive() {
+        const double fc = 0.5 / R * 0.92;            // cutoff relative to the 4× rate
+        const double beta = 7.0, mid = (TAPS - 1) * 0.5;
+        auto i0 = [](double x) {                      // modified Bessel I0
+            double sum = 1.0, term = 1.0;
+            for (int k = 1; k < 30; ++k) { term *= (x / (2.0 * k)) * (x / (2.0 * k)); sum += term; }
+            return sum;
+        };
+        double total = 0.0;
+        for (int n = 0; n < TAPS; ++n) {
+            const double t = n - mid;
+            const double sinc = t == 0.0 ? 2.0 * fc : std::sin(2.0 * kPiD * fc * t) / (kPiD * t);
+            const double r = (n - mid) / mid;
+            h_[n] = sinc * i0(beta * std::sqrt(std::max(0.0, 1.0 - r * r))) / i0(beta);
+            total += h_[n];
+        }
+        for (double& v : h_) v /= total;              // unity DC gain
+        reset();
+    }
+    void reset() {
+        std::fill(std::begin(xh_), std::end(xh_), 0.0);
+        std::fill(std::begin(zh_), std::end(zh_), 0.0);
+        zpos_ = 0;
+    }
+    inline double tick(double x, double drive) {
+        for (int m = P - 1; m > 0; --m) xh_[m] = xh_[m - 1];
+        xh_[0] = x;
+        for (int j = 0; j < R; ++j) {
+            double u = 0.0;
+            for (int m = 0; m < P; ++m) u += h_[j + m * R] * xh_[m];
+            zh_[zpos_] = std::tanh(u * R * drive);
+            zpos_ = (zpos_ + 1) % TAPS;
+        }
+        double y = 0.0;   // decimating low-pass: newest sample is at zpos_-1
+        for (int t = 0; t < TAPS; ++t) y += h_[t] * zh_[(zpos_ - 1 - t + 2 * TAPS) % TAPS];
+        return y;
+    }
+
+private:
+    double h_[TAPS]{};
+    double xh_[P]{};
+    double zh_[TAPS]{};
+    int zpos_ = 0;
+};
+
 // Sine oscillator with continuous phase.
 struct Lfo {
     double phase = 0.0;

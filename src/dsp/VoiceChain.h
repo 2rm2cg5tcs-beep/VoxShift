@@ -73,6 +73,7 @@ private:
     Reverb reverb_;
     Compressor comp_;
     Limiter limiter_;
+    OversampledDrive drive_;
     Lfo ringLfo_, tremLfo_;
     Smoother inGain_, levelGain_, outGain_, ringAmt_;
     double distDrive_ = 1.0, crushStep_ = 0.0, tremDepth_ = 0.0, tremRate_ = 6.0, ringFreq_ = 80.0;
