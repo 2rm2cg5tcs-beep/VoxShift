@@ -352,6 +352,71 @@ static void testPsola() {
     }
 }
 
+// A voice through a vocal tract of length L: impulse train → formant
+// resonators at (2i−1)·c/4L, each vowel perturbing the formants a little.
+static std::vector<float> tubeVoice(double f0, double cm, double dur, uint32_t seed = 1) {
+    const size_t n = size_t(SR * dur);
+    std::vector<double> x(n, 0.0);
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    double next = 0;
+    for (size_t i = 0; i < n; ++i)
+        if (double(i) >= next) {
+            x[i] = 1.0;
+            next += SR / f0 * (1.0 + 0.01 * u(rng));
+        }
+    const size_t vowel = SR / 5;  // a new "vowel" every 200 ms
+    std::vector<double> y(n, 0.0);
+    for (size_t v0 = 0; v0 < n; v0 += vowel) {
+        double F[5];
+        for (int k = 0; k < 5; ++k) F[k] = (2 * k + 1) * 35000.0 / (4.0 * cm) * (1.0 + 0.12 * u(rng));
+        std::vector<double> seg(x.begin() + long(v0), x.begin() + long(std::min(n, v0 + vowel)));
+        for (int k = 0; k < 5; ++k) {  // cascade of two-pole resonators
+            const double bw = 70.0 + 30.0 * k, r = std::exp(-PI * bw / SR), th = 2 * PI * F[k] / SR;
+            const double a1 = -2 * r * std::cos(th), a2 = r * r, g = 1 + a1 + a2;
+            double y1 = 0, y2 = 0;
+            for (double& s : seg) {
+                const double o = g * s - a1 * y1 - a2 * y2;
+                y2 = y1;
+                y1 = o;
+                s = o;
+            }
+        }
+        std::copy(seg.begin(), seg.end(), y.begin() + long(v0));
+    }
+    double mx = 1e-9;
+    for (double v : y) mx = std::max(mx, std::abs(v));
+    std::vector<float> out(n);
+    for (size_t i = 0; i < n; ++i) out[i] = float(y[i] / mx * 0.3);
+    return out;
+}
+
+static void testVocalTract() {
+    std::printf("vocal tract meter\n");
+    for (double cm : {12.5, 14.5, 17.0}) {
+        PsolaVoice v(SR);
+        runBlocks(v, tubeVoice(cm > 16 ? 115 : 210, cm, 6.0));
+        CHECK(v.vocalTractConfidence() > 100, "tract %.1f: only %.0f frames", cm, v.vocalTractConfidence());
+        CHECK(std::abs(v.vocalTract() - cm) < 0.9, "tract %.1f cm measured %.2f", cm, v.vocalTract());
+    }
+    {  // a profile change moves the measured tract toward the target
+        PsolaVoice v(SR);
+        v.setSpeaker(115, 3000);
+        v.setVocalTract(17.0, 1000);
+        PsolaParams p;
+        p.targetF0 = 210;
+        p.targetVtl = 14.4;
+        v.setParams(p);
+        const double a = v.effectiveAlpha();
+        CHECK(a > 1.2 && a < 1.32, "17 → 14.4 cm: formant ratio %.3f", a);
+        auto y = runBlocks(v, tubeVoice(115, 17.0, 6.0, 7));
+        PsolaVoice m(SR);
+        runBlocks(m, y);
+        CHECK(m.vocalTract() < 15.6, "converted voice measures %.2f cm", m.vocalTract());
+        CHECK(std::abs(m.speakerF0() / 210 - 1) < 0.05, "converted voice pitch %.1f", m.speakerF0());
+    }
+}
+
 static void testCoreEffects() {
     std::printf("robot / whisper / vibrato / denoise levels\n");
     auto x = vowel(110, 2.0, 0.2);
@@ -518,27 +583,36 @@ static int coreTool(int argc, char** argv) {
     return 0;
 }
 
-// --psola in.f32 out.f32 latency target pitchRatio formantRatio breath vibrato dry denoise [speakerHz]
-//   → denoiser + pitch-synchronous core exactly as wired in the chain
+// --psola in.f32 out.f32 [key=value ...]  → denoiser + pitch-synchronous core as wired in the chain
+//   keys: lat f0 pitch formant vtl inton breath vib dry denoise spk tract
 static int psolaTool(int argc, char** argv) {
-    if (argc < 12) return 2;
+    if (argc < 4) return 2;
     std::ifstream in(argv[2], std::ios::binary | std::ios::ate);
     const std::streamsize bytes = in.tellg();
     in.seekg(0);
     std::vector<float> data(size_t(bytes) / 4);
     in.read(reinterpret_cast<char*>(data.data()), std::streamsize(data.size() * 4));
+    auto opt = [&](const char* key, double def) {
+        const size_t kl = std::strlen(key);
+        for (int i = 4; i < argc; ++i)
+            if (std::strncmp(argv[i], key, kl) == 0 && argv[i][kl] == '=') return std::atof(argv[i] + kl + 1);
+        return def;
+    };
     Denoiser dn(SR);
-    dn.setAmount(std::atof(argv[11]));
-    PsolaVoice v(SR, std::atoi(argv[4]), dn.latency());
+    dn.setAmount(opt("denoise", 0.35));
+    PsolaVoice v(SR, int(opt("lat", 1024)), dn.latency());
     PsolaParams p;
-    p.targetF0 = std::atof(argv[5]);
-    p.pitchRatio = std::atof(argv[6]);
-    p.formantRatio = std::atof(argv[7]);
-    p.breath = std::atof(argv[8]);
-    p.vibratoDepth = std::atof(argv[9]);
-    p.dry = std::atof(argv[10]);
+    p.targetF0 = opt("f0", 0);
+    p.pitchRatio = opt("pitch", 1);
+    p.formantRatio = opt("formant", 1);
+    p.targetVtl = opt("vtl", 0);
+    p.intonation = opt("inton", 1);
+    p.breath = opt("breath", 0);
+    p.vibratoDepth = opt("vib", 0);
+    p.dry = opt("dry", 0);
+    if (opt("spk", 0) > 0) v.setSpeaker(opt("spk", 0), 3000.0);
+    if (opt("tract", 0) > 0) v.setVocalTract(opt("tract", 0), 1000.0);
     v.setParams(p);
-    if (argc > 12) v.setSpeaker(std::atof(argv[12]), 3000.0);
     std::vector<float> raw(480);
     for (size_t i = 0; i < data.size(); i += 480) {
         const size_t n = std::min<size_t>(480, data.size() - i);
@@ -548,12 +622,27 @@ static int psolaTool(int argc, char** argv) {
     }
     std::ofstream out(argv[3], std::ios::binary);
     out.write(reinterpret_cast<char*>(data.data()), std::streamsize(data.size() * 4));
-    std::printf("latency %d speaker %.1f Hz (%.0f frames) ratio %.3f\n", dn.latency() + v.latency(), v.speakerF0(),
-                v.speakerConfidence(), v.autoRatio());
+    std::printf("latency %d speaker %.1f Hz (%.0f frames) tract %.2f alpha %.3f ratio %.3f\n", dn.latency() + v.latency(),
+                v.speakerF0(), v.speakerConfidence(), v.vocalTract(), v.effectiveAlpha(), v.autoRatio());
     return 0;
 }
 
-// --render in.f32 outdir [quality] [speakerHz]  → renders every built-in preset to outdir/NN.f32 (+ names.txt)
+// --profile in.f32 → what the voice core learns about the speaker
+static int profileTool(int argc, char** argv) {
+    if (argc < 3) return 2;
+    std::ifstream in(argv[2], std::ios::binary | std::ios::ate);
+    const std::streamsize bytes = in.tellg();
+    in.seekg(0);
+    std::vector<float> data(size_t(bytes) / 4);
+    in.read(reinterpret_cast<char*>(data.data()), std::streamsize(data.size() * 4));
+    PsolaVoice v(SR);
+    runBlocks(v, data);
+    std::printf("f0 %.1f Hz (%.0f)  tract %.2f cm (%.0f)\n", v.speakerF0(), v.speakerConfidence(), v.vocalTract(),
+                v.vocalTractConfidence());
+    return 0;
+}
+
+// --render in.f32 outdir [quality] [speakerHz] [tractCm]  → renders every built-in preset to outdir/NN.f32 (+ names.txt)
 static int renderTool(int argc, char** argv) {
     if (argc < 4) return 2;
     std::ifstream in(argv[2], std::ios::binary | std::ios::ate);
@@ -563,12 +652,13 @@ static int renderTool(int argc, char** argv) {
     in.read(reinterpret_cast<char*>(x.data()), std::streamsize(x.size() * 4));
     const Quality q = (argc > 4 && std::atoi(argv[4])) ? Quality::High : Quality::Balanced;
     const double speaker = argc > 5 ? std::atof(argv[5]) : 0.0;
+    const double tract = argc > 6 ? std::atof(argv[6]) : 0.0;
     int idx = 0;
     std::ofstream names(std::string(argv[3]) + "/names.txt");
     for (const auto& p : builtinPresets()) {
         names << p.name << "\n";
         VoiceChain c(SR, q);
-        if (speaker > 0) c.setSpeaker(speaker, 3000.0);
+        if (speaker > 0) c.setSpeaker(speaker, 3000.0, tract, tract > 0 ? 1000.0 : 0.0);
         c.setVoice(p.full());
         std::vector<float> y = x;
         for (size_t i = 0; i < y.size(); i += 480) c.process(y.data() + i, std::min<size_t>(480, y.size() - i));
@@ -585,11 +675,13 @@ int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--core") == 0) return coreTool(argc, argv);
     if (argc > 1 && std::strcmp(argv[1], "--render") == 0) return renderTool(argc, argv);
     if (argc > 1 && std::strcmp(argv[1], "--psola") == 0) return psolaTool(argc, argv);
+    if (argc > 1 && std::strcmp(argv[1], "--profile") == 0) return profileTool(argc, argv);
     testFft();
     testIdentity();
     testPitch();
     testFormant();
     testPsola();
+    testVocalTract();
     testCoreEffects();
     testDenoise();
     testPresets();

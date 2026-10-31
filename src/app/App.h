@@ -50,6 +50,7 @@ private:
     void uiPresetsPage();
     void uiSliderCard(const char* id, const char* title, std::initializer_list<int> params);
     void uiVoiceBasics();
+    void uiVoiceMap();
     void syncSpeaker();
     void uiMicTab();
     void uiSetupTab();

@@ -131,6 +131,10 @@ void Config::load() {
     get(j, "speakerF0", speakerF0);
     get(j, "speakerConf", speakerConf);
     if (!(speakerF0 >= 50.0 && speakerF0 <= 700.0)) speakerF0 = speakerConf = 0.0;
+    get(j, "tractCm", tractCm);
+    get(j, "tractConf", tractConf);
+    if (!(tractCm >= 9.0 && tractCm <= 24.0)) tractCm = tractConf = 0.0;
+    tractConf = std::clamp(tractConf, 0.0, 1e7);
     speakerConf = std::clamp(speakerConf, 0.0, 1e7);
     get(j, "trayHintShown", trayHintShown);
 
@@ -180,6 +184,8 @@ void Config::save() const {
     j["firstRunDone"] = firstRunDone;
     j["speakerF0"] = speakerF0;
     j["speakerConf"] = speakerConf;
+    j["tractCm"] = tractCm;
+    j["tractConf"] = tractConf;
     j["trayHintShown"] = trayHintShown;
     json arr = json::array();
     for (const auto& u : userPresets)

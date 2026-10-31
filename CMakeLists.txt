@@ -13,6 +13,7 @@ add_library(voxdsp STATIC
   src/dsp/Denoiser.cpp
   src/dsp/PsolaVoice.cpp
   src/dsp/SpectralVoice.cpp
+  src/dsp/VocalTract.cpp
   src/dsp/VoiceChain.cpp
   src/dsp/Presets.cpp)
 target_include_directories(voxdsp PUBLIC src third_party)

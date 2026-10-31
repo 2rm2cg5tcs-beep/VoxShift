@@ -33,16 +33,18 @@ VoiceChain::VoiceChain(int sampleRate, Quality quality)
 
 int VoiceChain::coreMode(const VoiceValues& v) {
     if (v[P_Robot] > 0.0 || v[P_Whisper] > 0.0) return 2;
-    const bool id = std::abs(v[P_Pitch]) < 0.01 && std::abs(v[P_Formant]) < 0.01 && v[P_TargetF0] < 80.0 &&
-                    v[P_VibratoDepth] <= 0.0 && v[P_Breath] <= 0.004;
+    const bool id = std::abs(v[P_Pitch]) < 0.01 && std::abs(v[P_Formant]) < 0.01 && v[P_TargetF0] < 65.0 &&
+                    v[P_TargetVtl] < 9.0 && v[P_VibratoDepth] <= 0.0 && v[P_Breath] <= 0.004;
     return id ? 0 : 1;
 }
 
-void VoiceChain::setSpeaker(double hz, double confidence) {
+void VoiceChain::setSpeaker(double hz, double confidence, double tractCm, double tractConf) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
         pendingSpeakerHz_ = hz;
         pendingSpeakerConf_ = confidence;
+        pendingTractCm_ = tractCm;
+        pendingTractConf_ = tractConf;
     }
     dirty_.store(true);
 }
@@ -97,6 +99,10 @@ void VoiceChain::applyPending() {
             psola_.setSpeaker(pendingSpeakerHz_, pendingSpeakerConf_);
             pendingSpeakerHz_ = 0.0;
         }
+        if (pendingTractCm_ > 0.0) {
+            psola_.setVocalTract(pendingTractCm_, pendingTractConf_);
+            pendingTractCm_ = 0.0;
+        }
     }
     const double sr = double(sr_);
     const VoiceValues& v = v_;
@@ -132,7 +138,9 @@ void VoiceChain::applyPending() {
     PsolaParams pp;
     pp.pitchRatio = pitchRatio;
     pp.formantRatio = formantRatio;
-    pp.targetF0 = v[P_TargetF0] >= 80.0 ? v[P_TargetF0] : 0.0;
+    pp.targetF0 = v[P_TargetF0] >= 65.0 ? v[P_TargetF0] : 0.0;
+    pp.targetVtl = v[P_TargetVtl] >= 9.0 ? v[P_TargetVtl] : 0.0;
+    pp.intonation = v[P_Intonation];
     pp.vibratoDepth = v[P_VibratoDepth];
     pp.vibratoRate = v[P_VibratoRate];
     pp.dry = v[P_Dry];

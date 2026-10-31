@@ -26,6 +26,7 @@
 #pragma once
 
 #include "Effects.h"
+#include "VocalTract.h"
 
 #include <atomic>
 #include <cstdint>
@@ -36,15 +37,17 @@ namespace vox {
 struct PsolaParams {
     double pitchRatio = 1.0;    // fixed factor on top of the automatic one
     double targetF0 = 0.0;      // Hz; > 0 moves the speaker's typical pitch here
-    double formantRatio = 1.0;
+    double formantRatio = 1.0;  // fixed factor on top of the automatic one
+    double targetVtl = 0.0;     // cm; > 0 scales the formants from the speaker's tract to this one
+    double intonation = 1.0;    // > 1 livelier melody, < 1 flatter (auto pitch only)
     double vibratoDepth = 0.0;  // semitones
     double vibratoRate = 5.0;   // Hz
     double dry = 0.0;           // original voice mixed in
     double breath = 0.0;        // 0..1
 
     bool isIdentity() const {
-        return pitchRatio == 1.0 && targetF0 <= 0.0 && formantRatio == 1.0 && vibratoDepth <= 0.0 &&
-               breath <= 0.0;
+        return pitchRatio == 1.0 && targetF0 <= 0.0 && targetVtl <= 0.0 && formantRatio == 1.0 &&
+               vibratoDepth <= 0.0 && breath <= 0.0;
     }
 };
 
@@ -65,6 +68,10 @@ public:
     double speakerF0() const { return speakerHz_.load(std::memory_order_relaxed); }
     double speakerConfidence() const { return conf_; }
     void setSpeaker(double hz, double confidence);
+    // Apparent vocal-tract length of the speaker (cm; 0 = not measured yet).
+    double vocalTract() const { return tract_.lengthCm(); }
+    double vocalTractConfidence() const { return tract_.confidence(); }
+    void setVocalTract(double cm, double confidence) { tract_.set(cm, confidence); }
     // Pitch of the last analysed frame (0 = not voiced), for meters.
     double currentF0() const { return lastF0_.load(std::memory_order_relaxed); }
     double autoRatio() const;
@@ -95,7 +102,7 @@ private:
     double sampleAt(double pos) const;
     double anaAt(int64_t t) const { return ana_[size_t(t) & inMask_]; }
     void buildSinc(double alpha);
-    double beta() const;
+    double beta(double period) const;
     void updateSpeaker(double f0);
     void restartSynthesis(int64_t at);
     Mark& mark(int64_t k) { return marks_[size_t(k) & kMarkMask]; }
@@ -154,6 +161,8 @@ private:
     double histTotal_ = 0.0;
     double spk_ = 0.0, conf_ = 0.0;
     std::atomic<double> speakerHz_{125.0};
+    TractMeter tract_;
+    std::vector<float> lpcBuf_;
     std::atomic<double> lastF0_{0.0};
 
     PsolaParams p_;

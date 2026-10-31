@@ -67,8 +67,12 @@ std::string fmtValue(const ParamDef& d, double v) {
             if (v <= -89.5) return "выкл";
             std::snprintf(b, sizeof b, "%.0f дБ", v);
             return b;
+        case Fmt::TargetCm:
+            if (v < 9.0) return "выкл";
+            std::snprintf(b, sizeof b, "%.1f см", v);
+            return b;
         case Fmt::TargetHz:
-            if (v < 80.0) return "выкл";
+            if (v < 65.0) return "выкл";
             std::snprintf(b, sizeof b, "%d Гц", int(std::lround(v)));
             return b;
     }
@@ -503,28 +507,145 @@ void App::uiSliderCard(const char* id, const char* title, std::initializer_list<
     endCard();
 }
 
+// ---------------------------------------------------------------- voice map
+// Pitch (x, log scale) × vocal-tract size (y). The user's own voice, measured
+// while speaking, is a ring; the target is a white dot that can be dragged.
+namespace {
+constexpr double kMapFmin = 65.0, kMapFmax = 340.0, kMapCmMin = 11.0, kMapCmMax = 20.0;
+
+struct MapRegion {
+    const char* name;
+    double hz, cm, rx, ry;  // centre and radius (rx in octaves, ry in cm)
+};
+const MapRegion kRegions[] = {
+    {"Великан", 72, 19.3, 0.20, 0.7}, {"Мужчина", 112, 17.0, 0.34, 0.9}, {"Женщина", 190, 14.8, 0.28, 0.7},
+    {"Девушка", 228, 14.1, 0.26, 0.6}, {"Ребёнок", 285, 12.4, 0.27, 0.8},
+};
+}  // namespace
+
+void App::uiVoiceMap() {
+    const float w = ImGui::GetContentRegionAvail().x;
+    const float h = std::clamp(w * 0.42f, S(190), S(300));
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    const ImVec2 p1(p0.x + w, p0.y + h);
+    ImGui::InvisibleButton("voicemap", ImVec2(w, h), ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
+    const bool hovered = ImGui::IsItemHovered(), active = ImGui::IsItemActive();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    const float padL = S(14), padR = S(14), padT = S(12), padB = S(26);
+    const float x0 = p0.x + padL, x1 = p1.x - padR, y0 = p0.y + padT, y1 = p1.y - padB;
+    auto X = [&](double hz) {
+        return x0 + float((std::log2(hz) - std::log2(kMapFmin)) / (std::log2(kMapFmax) - std::log2(kMapFmin))) * (x1 - x0);
+    };
+    auto Y = [&](double cm) { return y0 + float((cm - kMapCmMin) / (kMapCmMax - kMapCmMin)) * (y1 - y0); };
+    auto hzAt = [&](float x) {
+        const double t = std::clamp(double(x - x0) / double(x1 - x0), 0.0, 1.0);
+        return std::exp2(std::log2(kMapFmin) + t * (std::log2(kMapFmax) - std::log2(kMapFmin)));
+    };
+    auto cmAt = [&](float y) {
+        const double t = std::clamp(double(y - y0) / double(y1 - y0), 0.0, 1.0);
+        return kMapCmMin + t * (kMapCmMax - kMapCmMin);
+    };
+
+    dl->AddRectFilled(p0, p1, kPanel2, S(12));
+    // grid: octaves and centimetres
+    for (double hz : {80.0, 100.0, 150.0, 200.0, 300.0}) {
+        const float x = X(hz);
+        dl->AddLine(ImVec2(x, y0), ImVec2(x, y1), IM_COL32(255, 255, 255, 10));
+        char t[16];
+        std::snprintf(t, sizeof t, "%.0f Гц", hz);
+        dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x - S(14), y1 + S(6)), kDim, t);
+    }
+    for (double cm : {12.0, 14.0, 16.0, 18.0}) {
+        const float y = Y(cm);
+        dl->AddLine(ImVec2(x0, y), ImVec2(x1, y), IM_COL32(255, 255, 255, 10));
+        char t[16];
+        std::snprintf(t, sizeof t, "%.0f см", cm);
+        dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x0 + S(4), y - S(15)), kDim, t);
+    }
+    // regions
+    for (const MapRegion& r : kRegions) {
+        const ImVec2 c(X(r.hz), Y(r.cm));
+        const float rx = float(r.rx / (std::log2(kMapFmax) - std::log2(kMapFmin))) * (x1 - x0);
+        const float ry = float(r.ry / (kMapCmMax - kMapCmMin)) * (y1 - y0);
+        const int seg = 40;
+        ImVec2 pts[seg];
+        for (int i = 0; i < seg; ++i) {
+            const float a = 6.2831853f * i / seg;
+            pts[i] = ImVec2(c.x + rx * std::cos(a), c.y + ry * std::sin(a));
+        }
+        dl->AddConvexPolyFilled(pts, seg, IM_COL32(255, 255, 255, 9));
+        dl->AddPolyline(pts, seg, IM_COL32(255, 255, 255, 26), ImDrawFlags_Closed, S(1));
+        const ImVec2 ts = g_fonts.caption->CalcTextSizeA(g_fonts.caption->FontSize, FLT_MAX, 0, r.name);
+        dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), kMuted, r.name);
+    }
+    dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x1 - S(118), y0), kDim, "↑ меньше горло");
+    dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x1 - S(118), y1 - S(16)), kDim, "↓ больше горло");
+
+    // the user's voice
+    const double uHz = engine_.speakerF0(), uCm = engine_.vocalTract();
+    const bool known = engine_.speakerConfidence() >= 100.0 && engine_.vocalTractConfidence() >= 50.0;
+    ImVec2 u(0, 0);
+    if (known) {
+        u = ImVec2(std::clamp(X(uHz), x0, x1), std::clamp(Y(uCm), y0, y1));
+        dl->AddCircle(u, S(7), kText, 24, S(2));
+        dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(u.x + S(10), u.y - S(8)), kText, "Вы");
+    }
+    // the target
+    const bool tOn = voice_[P_TargetF0] >= 65.0 && voice_[P_TargetVtl] >= 9.0;
+    if (tOn) {
+        const ImVec2 t(X(voice_[P_TargetF0] * std::pow(2.0, voice_[P_Pitch] / 12.0)), Y(voice_[P_TargetVtl]));
+        if (known) dl->AddLine(u, t, IM_COL32(255, 255, 255, 70), S(1.5f));
+        dl->AddCircleFilled(t, S(8), kAccent, 24);
+        dl->AddCircle(t, S(11), IM_COL32(255, 255, 255, 60), 24, S(1.5f));
+    }
+    if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (active && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        const ImVec2 m = ImGui::GetIO().MousePos;
+        double hz = std::round(hzAt(m.x) / 5.0) * 5.0 / std::pow(2.0, voice_[P_Pitch] / 12.0);
+        hz = std::clamp(hz, 65.0, 350.0);
+        const double cm = std::round(cmAt(m.y) * 10.0) / 10.0;
+        if (hz != voice_[P_TargetF0] || cm != voice_[P_TargetVtl]) {
+            voice_[P_TargetF0] = hz;
+            voice_[P_TargetVtl] = std::clamp(cm, 9.0, 22.0);
+            voiceChanged();
+        }
+    }
+    if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && tOn) {
+        voice_[P_TargetF0] = kVoiceParams[P_TargetF0].def;
+        voice_[P_TargetVtl] = kVoiceParams[P_TargetVtl].def;
+        voiceChanged();
+    }
+    if (hovered) {
+        const ImVec2 m = ImGui::GetIO().MousePos;
+        char tip[96];
+        std::snprintf(tip, sizeof tip, "%.0f Гц · %.1f см", hzAt(m.x), cmAt(m.y));
+        ImGui::SetTooltip("%s", tip);
+    }
+}
+
 void App::uiVoiceBasics() {
-    if (beginCard("v1", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-        sectionTitle("Основа");
+    if (beginCard("vmap", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        sectionTitle("Карта голоса");
         verticalGap(4);
-        for (int pid : {P_TargetF0, P_Pitch, P_Formant, P_Breath, P_Dry})
-            if (sliderRow(kVoiceParams[size_t(pid)], voice_[size_t(pid)], pid)) voiceChanged();
-        verticalGap(2);
-        // what the program has learned about the user's voice
+        uiVoiceMap();
+        verticalGap(4);
         const double hz = engine_.speakerF0(), conf = engine_.speakerConfidence();
-        const double shift = std::pow(2.0, voice_[P_Pitch] / 12.0);
-        char b[200];
-        if (conf >= 100.0) {
-            const double out = (voice_[P_TargetF0] >= 80.0 ? voice_[P_TargetF0] : hz) * shift;
-            std::snprintf(b, sizeof b, "Ваш голос ≈ %.0f Гц  →  в игре ≈ %.0f Гц", hz, out);
+        const double cm = engine_.vocalTract(), cmConf = engine_.vocalTractConfidence();
+        char b[240];
+        if (conf >= 100.0 && cmConf >= 50.0) {
+            std::snprintf(b, sizeof b, "Ваш голос: %.0f Гц, горло ≈ %.1f см. Нажмите на карту — голос станет таким, "
+                                       "правый клик — выключить.", hz, cm);
         } else {
-            std::snprintf(b, sizeof b, "Скажите пару фраз — программа узнает высоту вашего голоса.");
+            std::snprintf(b, sizeof b, "Скажите несколько фраз — программа измерит ваш голос и покажет его на карте. "
+                                       "Нажмите на карту, чтобы выбрать, кем звучать.");
         }
         ImGui::PushFont(g_fonts.caption);
-        textColored(kMuted, b);
+        textWrappedColored(kMuted, b);
         ImGui::PopFont();
     }
     endCard();
+    uiSliderCard("v1", "Основа", {P_TargetF0, P_TargetVtl, P_Pitch, P_Formant, P_Intonation, P_Breath, P_Dry});
 }
 
 // =====================================================================  microphone

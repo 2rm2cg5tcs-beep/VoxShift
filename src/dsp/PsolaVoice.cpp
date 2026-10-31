@@ -32,7 +32,8 @@ constexpr double kApOn = 0.25, kApOff = 0.40;   // YIN aperiodicity: start / kee
 constexpr double kFmin = 58.0, kFmax = 700.0;
 }  // namespace
 
-PsolaVoice::PsolaVoice(int sampleRate, int latency, int analysisAhead) : sr_(sampleRate) {
+PsolaVoice::PsolaVoice(int sampleRate, int latency, int analysisAhead)
+    : sr_(sampleRate), tract_(double(sampleRate) / std::max(1, int(std::lround(sampleRate / 12000.0)))) {
     const double fs = double(sr_);
     const double sc = fs / 48000.0;
     D_ = latency > 0 ? size_t(latency) : size_t(std::lround(1024 * sc));
@@ -96,6 +97,7 @@ PsolaVoice::PsolaVoice(int sampleRate, int latency, int analysisAhead) : sr_(sam
 
     spk_ = std::log2(125.0);
     hist_.assign(size_t(kHistBins), 0.0);
+    lpcBuf_.assign(size_t(0.025 * fsd_) + 1, 0.0f);
     buildSinc(1.0);
     reset();
 }
@@ -159,6 +161,15 @@ void PsolaVoice::setSpeaker(double hz, double confidence) {
 // a man choosing "Девушка" gets the full shift, a woman choosing it keeps
 // her own timbre (instead of turning into a child).
 double PsolaVoice::effectiveAlpha() const {
+    if (p_.targetVtl > 0.0) {
+        // from the speaker's measured tract to the target one. The meter reads
+        // a warped voice as only alpha^0.72 shorter (calibrated on 18 male
+        // voices), hence the exponent 1/0.72: the result *measures* as the target.
+        double user = tract_.confidence() >= 50.0 ? tract_.lengthCm() : 0.0;
+        if (user <= 0.0) user = std::exp2(spk_) < 165.0 ? 16.9 : 14.8;  // typical man / woman
+        const double a = std::pow(user / p_.targetVtl, 1.39);
+        return std::clamp(a, 0.6, 1.7) * p_.formantRatio;
+    }
     if (p_.targetF0 <= 0.0 || p_.formantRatio == 1.0) return p_.formantRatio;
     const double s = std::min(1.0, std::abs(std::log2(autoRatio())) / std::log2(1.6));
     return std::pow(p_.formantRatio, s);
@@ -366,7 +377,15 @@ void PsolaVoice::analyseFrame(int64_t i) {
 #endif
     // the speaker model learns only from clear, loud voiced frames (not from
     // hum or murmur in the pauses)
-    if (raw && ap < 0.2 && rms > 0.15 * peakRms_) updateSpeaker(f0);
+    if (raw && ap < 0.2 && rms > 0.15 * peakRms_) {
+        updateSpeaker(f0);
+        if ((i & 1) == 0) {  // vocal tract: every 10 ms is plenty
+            const int N = int(lpcBuf_.size());
+            for (int j = 0; j < N; ++j) lpcBuf_[size_t(j)] = dec_[size_t(c - N / 2 + j) & decMask_];
+            const double cm = tract_.measure(lpcBuf_.data(), N);
+            if (cm > 0.0) tract_.learn(cm);
+        }
+    }
 }
 
 // Speaker model: a slowly forgetting histogram of the pitch of clear voiced
@@ -512,8 +531,13 @@ bool PsolaVoice::extendOne(int64_t availAna) {
     return true;
 }
 
-double PsolaVoice::beta() const {
+double PsolaVoice::beta(double period) const {
     double b = p_.pitchRatio * autoRatio();
+    if (p_.targetF0 > 0.0 && p_.intonation != 1.0 && period > 0.0) {
+        // stretch the melody around the speaker's typical pitch
+        const double dev = std::log2(double(sr_) / period) - spk_;
+        b *= std::exp2(std::clamp(dev * (p_.intonation - 1.0), -5.0 / 12.0, 5.0 / 12.0));
+    }
     if (p_.vibratoDepth > 0.0) b *= std::exp2(p_.vibratoDepth * std::sin(vibPhase_) / 12.0);
     return std::clamp(b, 0.3, 3.5);
 }
@@ -556,7 +580,7 @@ void PsolaVoice::synthesise(int64_t emitStart, int64_t emitEnd) {
 
         double dphi, gain = 1.0;
         if (voiced) {
-            const double bt = beta();
+            const double bt = beta(Tin);
             dphi = 1.0 / bt;
             gain = bt < 1.0 ? std::min(2.0, std::sqrt(1.0 / bt)) : 1.0;
         } else {

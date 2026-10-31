@@ -238,7 +238,7 @@ bool AudioEngine::start(const EngineSettings& s) {
     }
 
     chain_ = std::make_unique<VoiceChain>(kRate, s.quality);
-    if (speakerHz_ > 0.0) chain_->setSpeaker(speakerHz_, speakerConf_);
+    if (speakerHz_ > 0.0 || tractCm_ > 0.0) chain_->setSpeaker(speakerHz_, speakerConf_, tractCm_, tractConf_);
     chain_->setVoice(voice_);
     chain_->setGlobal(global_);
     chain_->setEnabled(enabled_);
@@ -266,10 +266,20 @@ bool AudioEngine::start(const EngineSettings& s) {
     return true;
 }
 
-void AudioEngine::setSpeaker(double hz, double confidence) {
+void AudioEngine::setSpeaker(double hz, double confidence, double tractCm, double tractConf) {
     speakerHz_ = hz;
     speakerConf_ = confidence;
-    if (chain_) chain_->setSpeaker(hz, confidence);
+    tractCm_ = tractCm;
+    tractConf_ = tractConf;
+    if (chain_) chain_->setSpeaker(hz, confidence, tractCm, tractConf);
+}
+
+double AudioEngine::vocalTract() const {
+    return (chain_ && chain_->vocalTractConfidence() > 0.0) ? chain_->vocalTract() : tractCm_;
+}
+
+double AudioEngine::vocalTractConfidence() const {
+    return (chain_ && chain_->vocalTractConfidence() > 0.0) ? chain_->vocalTractConfidence() : tractConf_;
 }
 
 double AudioEngine::speakerF0() const {
@@ -292,6 +302,10 @@ void AudioEngine::stop() {
     if (chain_ && chain_->speakerConfidence() > 0.0) {
         speakerHz_ = chain_->speakerF0();
         speakerConf_ = chain_->speakerConfidence();
+    }
+    if (chain_ && chain_->vocalTractConfidence() > 0.0) {
+        tractCm_ = chain_->vocalTract();
+        tractConf_ = chain_->vocalTractConfidence();
     }
     chain_.reset();
     status_.running = false;

@@ -38,6 +38,10 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
     if (!screenshotDir_.empty()) {   // deterministic look for CI screenshots
         cfg_ = Config();
         cfg_.firstRunDone = false;
+        cfg_.speakerF0 = 118.0;        // a typical male voice on the voice map
+        cfg_.speakerConf = 2000.0;
+        cfg_.tractCm = 17.1;
+        cfg_.tractConf = 2000.0;
     }
     rebuildPresets();
     if (!findPreset(cfg_.preset)) cfg_.preset = kNeutralPreset;
@@ -81,7 +85,8 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
     engine_.setVoice(voice_);
     engine_.setGlobal(cfg_.global);
     engine_.setEnabled(cfg_.enabled);
-    if (cfg_.speakerF0 > 0.0) engine_.setSpeaker(cfg_.speakerF0, cfg_.speakerConf);
+    if (cfg_.speakerF0 > 0.0 || cfg_.tractCm > 0.0)
+        engine_.setSpeaker(cfg_.speakerF0, cfg_.speakerConf, cfg_.tractCm, cfg_.tractConf);
     if (screenshotDir_.empty()) applyCableDefaultOnStart();
     refreshDevices();
     refreshSetupStatus();
@@ -596,7 +601,9 @@ void App::periodic() {
         // remember the learned voice pitch (every 20 s, when it changed)
         speakerSyncAt_ = t + 20.0;
         const double hz = engine_.speakerF0(), conf = engine_.speakerConfidence();
-        if (conf >= 100.0 && (std::abs(hz - cfg_.speakerF0) > 0.5 || conf > cfg_.speakerConf * 1.5 + 50.0)) {
+        const double cm = engine_.vocalTract();
+        if (conf >= 100.0 && (std::abs(hz - cfg_.speakerF0) > 0.5 || conf > cfg_.speakerConf * 1.5 + 50.0 ||
+                              std::abs(cm - cfg_.tractCm) > 0.05)) {
             syncSpeaker();
             saveSoon();
         }
@@ -793,6 +800,10 @@ void App::syncSpeaker() {
     if (engine_.speakerConfidence() >= 100.0) {
         cfg_.speakerF0 = std::round(engine_.speakerF0() * 10.0) / 10.0;
         cfg_.speakerConf = std::round(engine_.speakerConfidence());
+    }
+    if (engine_.vocalTractConfidence() >= 50.0) {
+        cfg_.tractCm = std::round(engine_.vocalTract() * 100.0) / 100.0;
+        cfg_.tractConf = std::round(engine_.vocalTractConfidence());
     }
 }
 

@@ -72,9 +72,11 @@ public:
 
     // The pitch of the user's voice as learned by the voice core (kept across
     // restarts of the engine; seeded from the saved settings).
-    void setSpeaker(double hz, double confidence);
+    void setSpeaker(double hz, double confidence, double tractCm, double tractConf);
     double speakerF0() const;
     double speakerConfidence() const;
+    double vocalTract() const;
+    double vocalTractConfidence() const;
     double currentF0() const { return chain_ ? chain_->currentF0() : 0.0; }
 
 private:
@@ -87,7 +89,7 @@ private:
     VoiceValues voice_;
     GlobalValues global_;
     bool enabled_ = true;
-    double speakerHz_ = 0.0, speakerConf_ = 0.0;
+    double speakerHz_ = 0.0, speakerConf_ = 0.0, tractCm_ = 0.0, tractConf_ = 0.0;
 
     SpscRing outRing_, monRing_;
     std::unique_ptr<Stream> capture_, render_, monitor_;

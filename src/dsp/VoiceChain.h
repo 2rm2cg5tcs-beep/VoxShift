@@ -44,8 +44,10 @@ public:
     double speakerF0() const { return psola_.speakerF0(); }
     double speakerConfidence() const { return speakerConf_.load(std::memory_order_relaxed); }
     double currentF0() const { return psola_.currentF0(); }
+    double vocalTract() const { return psola_.vocalTract(); }
+    double vocalTractConfidence() const { return psola_.vocalTractConfidence(); }
     // Seeds the speaker model (e.g. from the saved settings); applied on the audio thread.
-    void setSpeaker(double hz, double confidence);
+    void setSpeaker(double hz, double confidence, double tractCm = 0.0, double tractConf = 0.0);
     // Which core a voice needs: 0 = none (identity), 1 = pitch-synchronous, 2 = spectral.
     static int coreMode(const VoiceValues& v);
     int sampleRate() const { return sr_; }
@@ -70,7 +72,7 @@ private:
     VoiceValues pendingVoice_;
     GlobalValues pendingGlobal_;
     bool pendingEnabled_ = true;
-    double pendingSpeakerHz_ = 0.0, pendingSpeakerConf_ = 0.0;
+    double pendingSpeakerHz_ = 0.0, pendingSpeakerConf_ = 0.0, pendingTractCm_ = 0.0, pendingTractConf_ = 0.0;
     std::atomic<bool> dirty_{true};
     std::atomic<bool> duckRequest_{false};
 

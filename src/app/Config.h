@@ -54,6 +54,7 @@ struct Config {
     bool firstRunDone = false;
     // typical pitch of the user's voice, learned while speaking (auto pitch)
     double speakerF0 = 0.0, speakerConf = 0.0;
+    double tractCm = 0.0, tractConf = 0.0;   // apparent vocal-tract length
     bool trayHintShown = false;
 
     std::vector<UserPreset> userPresets;
