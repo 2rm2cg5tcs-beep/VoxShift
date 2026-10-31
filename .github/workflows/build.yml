@@ -18,10 +18,16 @@ jobs:
         run: cmake -S . -B build -A x64
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
       - name: DSP tests
-        run: build\Release\dsp_tests.exe
+        shell: pwsh
+        run: |
+          build\Release\dsp_tests.exe 2>&1 | Tee-Object -FilePath tests.log
+          if ($LASTEXITCODE -ne 0) { throw "dsp tests failed" }
 
       - name: Self-test of the app (audio chain + device enumeration)
         shell: pwsh
@@ -39,12 +45,25 @@ jobs:
           if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "screenshot run timed out" }
           Get-ChildItem shots
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshots
-          path: shots/*.bmp
-          if-no-files-found: ignore
+      - name: Publish screenshots (pre-release "ci-screenshots")
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          Get-ChildItem shots\*.bmp | ForEach-Object {
+            $img = [System.Drawing.Image]::FromFile($_.FullName)
+            $img.Save(($_.FullName -replace '\.bmp$', '.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+            $img.Dispose()
+          }
+          gh release delete ci-screenshots --yes --cleanup-tag 2>$null
+          $files = @(Get-ChildItem shots\*.png | ForEach-Object { $_.FullName })
+          if ($files.Count -gt 0) {
+            gh release create ci-screenshots $files --title "CI screenshots" --notes "UI screenshots from the latest build" --prerelease
+          }
+          exit 0
 
       - name: Installer (Inno Setup)
         shell: pwsh
@@ -70,3 +89,14 @@ jobs:
           $global:LASTEXITCODE = 0
           $notes = "Автоматическая сборка из main ($env:GITHUB_SHA).`n`nPressvppp_Setup.exe — установщик (рекомендуется).`nPressvppp_portable.exe — запуск без установки."
           gh release create latest Output/Pressvppp_Setup.exe Pressvppp_portable.exe --title "Pressvppp — последняя сборка" --notes $notes --latest
+
+      - name: Publish logs on failure (pre-release "ci-logs")
+        if: failure() && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ci-logs --yes --cleanup-tag 2>$null
+          $files = @('build.log', 'tests.log') | Where-Object { Test-Path $_ }
+          if ($files.Count -gt 0) { gh release create ci-logs $files --title "CI logs" --notes "Logs of the last failed build" --prerelease }
+          exit 0
