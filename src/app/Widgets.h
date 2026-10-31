@@ -40,7 +40,7 @@ ImVec4 col(ImU32 c);
 struct Fonts {
     ImFont* body = nullptr;
     ImFont* bold = nullptr;
-    ImFont* small = nullptr;
+    ImFont* caption = nullptr;   // not "small": <rpcndr.h> #defines small as char
     ImFont* title = nullptr;
     ImFont* huge = nullptr;
 };

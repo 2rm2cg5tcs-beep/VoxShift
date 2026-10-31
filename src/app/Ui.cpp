@@ -155,7 +155,7 @@ void App::uiSidebar(float h) {
     }
     {
         const ImVec2 p = ImGui::GetItemRectMin(), q = ImGui::GetItemRectMax();
-        ImGui::PushFont(g_fonts.small);
+        ImGui::PushFont(g_fonts.caption);
         const char* k = "Ctrl F";
         dl->AddText(ImVec2(q.x - S(14) - ImGui::CalcTextSize(k).x, p.y + (q.y - p.y - ImGui::GetTextLineHeight()) * 0.5f), kDim, k);
         ImGui::PopFont();
@@ -318,7 +318,7 @@ void App::uiMain(float /*w*/, float h) {
         default: break;
     }
     if (voicePage) {
-        ImGui::PushFont(g_fonts.small);
+        ImGui::PushFont(g_fonts.caption);
         textColored(kDim, "Колесо мыши над ползунком — точная настройка, правый клик — вернуть по умолчанию.");
         ImGui::PopFont();
     }
@@ -332,7 +332,7 @@ void App::uiMain(float /*w*/, float h) {
     dl->AddLine(ImVec2(fp.x - S(32), fp.y), ImVec2(fp.x + ImGui::GetContentRegionAvail().x + S(32), fp.y), kBorder);
     verticalGap(10);
     const EngineStatus& st = engine_.status();
-    ImGui::PushFont(g_fonts.small);
+    ImGui::PushFont(g_fonts.caption);
     const float mh = S(6), mw = S(110);
     auto meter = [&](const char* label, float v) {
         ImGui::AlignTextToFramePadding();
@@ -397,7 +397,7 @@ void App::uiPresetsPage() {
         if (items.empty()) continue;
         any = true;
         verticalGap(4);
-        ImGui::PushFont(g_fonts.small);
+        ImGui::PushFont(g_fonts.caption);
         textColored(kMuted, cat);
         ImGui::PopFont();
         for (size_t i = 0; i < items.size(); ++i) {
@@ -422,9 +422,9 @@ void App::uiPresetsPage() {
             dl->AddText(ImVec2(a.x + S(14), a.y + S(12)), kText, p.name.c_str());
             dl->PopClipRect();
             ImGui::PopFont();
-            ImGui::PushFont(g_fonts.small);
+            ImGui::PushFont(g_fonts.caption);
             dl->PushClipRect(a, ImVec2(b.x - S(8), b.y - S(6)), true);
-            dl->AddText(g_fonts.small, g_fonts.small->FontSize, ImVec2(a.x + S(14), a.y + S(38)), kMuted,
+            dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(a.x + S(14), a.y + S(38)), kMuted,
                         p.description.c_str(), nullptr, cw - S(28));
             dl->PopClipRect();
             ImGui::PopFont();
@@ -676,7 +676,7 @@ void App::uiSettingsTab() {
             restartAudio();
         }
         ImGui::SetCursorPosX(labelW + ImGui::GetStyle().WindowPadding.x);
-        ImGui::PushFont(g_fonts.small);
+        ImGui::PushFont(g_fonts.caption);
         textColored(kDim, "Если слышны щелчки — выберите «Надёжный».");
         ImGui::PopFont();
     }

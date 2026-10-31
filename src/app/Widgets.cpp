@@ -68,7 +68,7 @@ void applyTheme(float scale) {
     };
     g_fonts.body = add(regular, 15.0f);
     g_fonts.bold = add(bold, 15.0f);
-    g_fonts.small = add(regular, 13.0f);
+    g_fonts.caption = add(regular, 13.0f);
     g_fonts.title = add(bold, 28.0f);
     g_fonts.huge = add(bold, 17.0f);
     io.FontDefault = g_fonts.body;
