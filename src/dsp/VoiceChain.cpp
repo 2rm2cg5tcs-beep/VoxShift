@@ -1,5 +1,6 @@
 #include "VoiceChain.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace vox {
@@ -9,7 +10,8 @@ constexpr size_t kBlock = 240;   // internal block: 5 ms @ 48 kHz
 }
 
 VoiceChain::VoiceChain(int sampleRate, Quality quality)
-    : sr_(sampleRate), core_(sampleRate, quality),
+    : sr_(sampleRate), core_(sampleRate, quality), denoiser_(sampleRate),
+      psola_(sampleRate, core_.latency() - denoiser_.latency(), denoiser_.latency()), raw_(kBlock),
       pendingVoice_(defaultVoice()), pendingGlobal_(defaultGlobal()),
       v_(defaultVoice()), g_(defaultGlobal()) {
     const double sr = double(sr_);
@@ -29,9 +31,27 @@ VoiceChain::VoiceChain(int sampleRate, Quality quality)
     inGain_.reset(inGain_.target); levelGain_.reset(levelGain_.target); outGain_.reset(outGain_.target);
 }
 
+int VoiceChain::coreMode(const VoiceValues& v) {
+    if (v[P_Robot] > 0.0 || v[P_Whisper] > 0.0) return 2;
+    const bool id = std::abs(v[P_Pitch]) < 0.01 && std::abs(v[P_Formant]) < 0.01 && v[P_TargetF0] < 80.0 &&
+                    v[P_VibratoDepth] <= 0.0 && v[P_Breath] <= 0.004;
+    return id ? 0 : 1;
+}
+
+void VoiceChain::setSpeaker(double hz, double confidence) {
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        pendingSpeakerHz_ = hz;
+        pendingSpeakerConf_ = confidence;
+    }
+    dirty_.store(true);
+}
+
 void VoiceChain::setVoice(const VoiceValues& v, bool smooth) {
     {
         std::lock_guard<std::mutex> lk(mtx_);
+        // a different voice core cannot take over mid-word without a click
+        if (coreMode(v) != coreMode(pendingVoice_)) smooth = true;
         for (size_t i = 0; i < v.size(); ++i) {
             const ParamDef& d = kVoiceParams[i];
             const double x = v[i];
@@ -73,14 +93,34 @@ void VoiceChain::applyPending() {
         enabled_ = pendingEnabled_;
         v_ = enabled_ ? pendingVoice_ : defaultVoice();
         g_ = pendingGlobal_;
+        if (pendingSpeakerHz_ > 0.0) {
+            psola_.setSpeaker(pendingSpeakerHz_, pendingSpeakerConf_);
+            pendingSpeakerHz_ = 0.0;
+        }
     }
     const double sr = double(sr_);
     const VoiceValues& v = v_;
     const GlobalValues& g = g_;
 
+    const double pitchRatio = std::abs(v[P_Pitch]) >= 0.01 ? semitonesToRatio(v[P_Pitch]) : 1.0;
+    const double formantRatio = std::abs(v[P_Formant]) >= 0.01 ? semitonesToRatio(v[P_Formant]) : 1.0;
+    const bool psola = coreMode(v) != 2;
+    if (psola != usePsola_) {
+        // the other path has stale buffers: start it clean, stay silent until
+        // its first real output arrives, then fade in
+        usePsola_ = psola;
+        if (psola) {
+            denoiser_.reset();
+            psola_.reset();
+        } else {
+            core_.reset();
+        }
+        mute_ = size_t(core_.latency());
+        fadeIn_ = true;
+    }
     CoreParams cp;
-    cp.pitchRatio = std::abs(v[P_Pitch]) >= 0.01 ? semitonesToRatio(v[P_Pitch]) : 1.0;
-    cp.formantRatio = std::abs(v[P_Formant]) >= 0.01 ? semitonesToRatio(v[P_Formant]) : 1.0;
+    cp.pitchRatio = pitchRatio;
+    cp.formantRatio = formantRatio;
     cp.robot = v[P_Robot];
     cp.whisper = v[P_Whisper];
     cp.vibratoDepth = v[P_VibratoDepth];
@@ -88,6 +128,17 @@ void VoiceChain::applyPending() {
     cp.dry = v[P_Dry];
     cp.denoise = g[G_Denoise];
     core_.setParams(cp);
+
+    PsolaParams pp;
+    pp.pitchRatio = pitchRatio;
+    pp.formantRatio = formantRatio;
+    pp.targetF0 = v[P_TargetF0] >= 80.0 ? v[P_TargetF0] : 0.0;
+    pp.vibratoDepth = v[P_VibratoDepth];
+    pp.vibratoRate = v[P_VibratoRate];
+    pp.dry = v[P_Dry];
+    pp.breath = v[P_Breath] > 0.004 ? v[P_Breath] : 0.0;
+    psola_.setParams(pp);
+    denoiser_.setAmount(g[G_Denoise]);
 
     a_.gate = g[G_Gate] > -89.5;
     gate_.setThreshold(g[G_Gate]);
@@ -137,6 +188,8 @@ void VoiceChain::applyPending() {
 
 void VoiceChain::reset() {
     core_.reset();
+    denoiser_.reset();
+    psola_.reset();
     for (Biquad* b : {&rumble_, &lowShelf_, &midPeak_, &highShelf_}) b->reset();
     hp_.reset(); lp_.reset(); gate_.reset(); chorus_.reset(); echo_.reset(); reverb_.reset();
     comp_.reset(); limiter_.reset(); drive_.reset();
@@ -189,6 +242,17 @@ void VoiceChain::processBlock(float* x, size_t n, bool) {
     }
     if (dirty_.load()) applyPending();
     runBlock(x, n);
+    if (mute_ > 0) {
+        // a freshly started core: silence until its first real output
+        const size_t m = std::min(mute_, n);
+        std::fill(x, x + m, 0.0f);
+        mute_ -= m;
+        if (m == n) return;
+        const size_t r = n - m;
+        for (size_t i = 0; i < r; ++i) x[m + i] *= float(double(i) / double(r));
+        fadeIn_ = false;
+        return;
+    }
     if (fadeIn_) {
         fadeIn_ = false;
         for (size_t i = 0; i < n; ++i) x[i] *= float(double(i) / double(n));
@@ -206,7 +270,16 @@ void VoiceChain::runBlock(float* x, size_t n) {
         x[i] = float(s);
     }
 
-    core_.process(x, n);
+    if (usePsola_) {
+        // the pitch analysis gets the signal before the denoiser: its latency
+        // becomes free look-ahead
+        std::copy(x, x + n, raw_.data());
+        denoiser_.process(x, n);
+        psola_.process(x, n, raw_.data());
+        speakerConf_.store(psola_.speakerConfidence(), std::memory_order_relaxed);
+    } else {
+        core_.process(x, n);
+    }
 
     for (size_t i = 0; i < n; ++i) {
         double s = x[i];

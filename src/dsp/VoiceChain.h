@@ -1,8 +1,12 @@
-// Complete voice chain: mic clean-up → spectral voice → effects → dynamics.
+// Complete voice chain: mic clean-up → voice core → effects → dynamics.
 //
-//   input gain → rumble HPF → gate → SpectralVoice → ring mod → 3-band EQ →
+//   input gain → rumble HPF → gate → voice core → ring mod → 3-band EQ →
 //   HP/LP 24 dB → distortion → bitcrush → 8-bit → chorus → tremolo → echo →
 //   reverb → preset level → compressor → master volume → limiter (−1 dBFS)
+//
+// Voice core: speech presets use Denoiser + PsolaVoice (pitch-synchronous,
+// natural); robot / whisper need the spectral SpectralVoice. Both paths have
+// the same latency; switching between them is muted for one latency period.
 //
 // Thread model: setVoice/setGlobal/setEnabled are called from the UI thread;
 // process() runs on the audio thread and never blocks (it picks up new
@@ -10,7 +14,9 @@
 #pragma once
 
 #include "Effects.h"
+#include "Denoiser.h"
 #include "Params.h"
+#include "PsolaVoice.h"
 #include "SpectralVoice.h"
 
 #include <atomic>
@@ -33,6 +39,15 @@ public:
     void reset();
 
     int latencySamples() const { return core_.latency(); }
+
+    // What the chain has learned about the speaker's voice (thread-safe reads).
+    double speakerF0() const { return psola_.speakerF0(); }
+    double speakerConfidence() const { return speakerConf_.load(std::memory_order_relaxed); }
+    double currentF0() const { return psola_.currentF0(); }
+    // Seeds the speaker model (e.g. from the saved settings); applied on the audio thread.
+    void setSpeaker(double hz, double confidence);
+    // Which core a voice needs: 0 = none (identity), 1 = pitch-synchronous, 2 = spectral.
+    static int coreMode(const VoiceValues& v);
     int sampleRate() const { return sr_; }
     bool sleeping() const { return sleeping_; }
 
@@ -43,12 +58,19 @@ private:
 
     int sr_;
     SpectralVoice core_;
+    Denoiser denoiser_;
+    PsolaVoice psola_;
+    std::vector<float> raw_;
+    bool usePsola_ = true;
+    size_t mute_ = 0;
+    std::atomic<double> speakerConf_{0.0};
 
     // ---- shared with UI thread
     std::mutex mtx_;
     VoiceValues pendingVoice_;
     GlobalValues pendingGlobal_;
     bool pendingEnabled_ = true;
+    double pendingSpeakerHz_ = 0.0, pendingSpeakerConf_ = 0.0;
     std::atomic<bool> dirty_{true};
     std::atomic<bool> duckRequest_{false};
 

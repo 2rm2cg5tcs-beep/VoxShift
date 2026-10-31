@@ -2,7 +2,9 @@
 //   dsp_tests            → run everything, exit code = number of failures
 //   dsp_tests --core in.f32 out.f32 quality pitch formant robot whisper vib dry denoise
 //                       → reference-comparison helper (raw float32 mono 48 kHz)
+#include "dsp/Denoiser.h"
 #include "dsp/Fft.h"
+#include "dsp/PsolaVoice.h"
 #include "dsp/Presets.h"
 #include "dsp/SpectralVoice.h"
 #include "dsp/VoiceChain.h"
@@ -190,6 +192,166 @@ static void testFormant() {
     CHECK(std::abs(centroid(y) / base - 1) < 0.15, "pitch-only changed formants: %.0f vs %.0f", centroid(y), base);
 }
 
+static double clickiness(const std::vector<float>& y, size_t from) {
+    std::vector<double> d(y.size(), 0.0);
+    for (size_t i = from + 2; i < y.size(); ++i) d[i] = std::abs(double(y[i]) - 2.0 * y[i - 1] + y[i - 2]);
+    double worst = 0, acc = 0;
+    const size_t W = 480;
+    for (size_t i = from; i < y.size(); ++i) {
+        acc += d[i];
+        if (i >= from + W) acc -= d[i - W];
+        if (i >= from + W) worst = std::max(worst, d[i - W / 2] / (acc / W + 1e-6));
+    }
+    return worst;
+}
+
+static void testPsola() {
+    std::printf("pitch-synchronous core\n");
+    {  // identity is an exact delay
+        auto x = vowel(120, 1.0, 0.1);
+        PsolaVoice v(SR);
+        auto y = runBlocks(v, x);
+        double err = 0;
+        for (size_t i = size_t(v.latency()); i < y.size(); ++i)
+            err = std::max(err, std::abs(double(y[i]) - x[i - size_t(v.latency())]));
+        CHECK(err < 1e-6, "identity error %g", err);
+    }
+    for (double f0 : {85.0, 120.0, 220.0})
+        for (int st : {-12, -7, -3, 3, 7, 12, 17}) {
+            const double want = f0 * std::pow(2.0, st / 12.0);
+            if (want > 600 || want < 45) continue;
+            PsolaVoice v(SR);
+            PsolaParams p;
+            p.pitchRatio = semitonesToRatio(st);
+            v.setParams(p);
+            const double got = f0Estimate(runBlocks(v, vowel(f0, 2.0)));
+            CHECK(std::abs(got - want) / want < 0.02, "psola f0 %.0f %+d st: got %.1f want %.1f", f0, st, got, want);
+        }
+    {  // formants move, pitch stays (and the other way round)
+        auto x = vowel(120, 2.0);
+        const double base = centroid(x);
+        for (int st : {5, -5}) {
+            PsolaVoice v(SR);
+            PsolaParams p;
+            p.formantRatio = semitonesToRatio(st);
+            v.setParams(p);
+            auto y = runBlocks(v, x);
+            const double c = centroid(y);
+            CHECK(st > 0 ? c > base * 1.15 : c < base * 0.87, "psola formant %+d centroid %.0f base %.0f", st, c, base);
+            CHECK(std::abs(f0Estimate(y) - 120) < 2.5, "psola formant %+d moved pitch to %.1f", st, f0Estimate(y));
+        }
+        PsolaVoice v(SR);
+        PsolaParams p;
+        p.pitchRatio = 1.8;
+        v.setParams(p);
+        auto y = runBlocks(v, x);
+        CHECK(std::abs(centroid(y) / base - 1) < 0.12, "psola pitch-only moved formants: %.0f vs %.0f", centroid(y), base);
+    }
+    {  // auto pitch: learns the speaker and lands on the target
+        for (double f0 : {95.0, 150.0}) {
+            PsolaVoice v(SR);
+            PsolaParams p;
+            p.targetF0 = 210;
+            v.setParams(p);
+            auto y = runBlocks(v, vowel(f0, 3.0, 0.04));
+            CHECK(std::abs(v.speakerF0() / f0 - 1) < 0.03, "speaker %.1f Hz, voice %.0f", v.speakerF0(), f0);
+            std::vector<float> tail(y.begin() + SR, y.end());
+            const double got = f0Estimate(tail);
+            CHECK(std::abs(got / 210 - 1) < 0.04, "auto pitch from %.0f Hz: got %.1f want ~210", f0, got);
+        }
+        PsolaVoice v(SR);
+        v.setSpeaker(130, 3000);
+        CHECK(std::abs(v.speakerF0() - 130) < 0.5, "seeded speaker %.1f", v.speakerF0());
+        PsolaParams p;
+        p.targetF0 = 210;
+        v.setParams(p);
+        CHECK(std::abs(v.autoRatio() - 210.0 / 130.0) < 0.01, "auto ratio %.3f", v.autoRatio());
+    }
+    {  // the speaker model ignores octave errors and hum in the pauses
+        std::vector<float> x;
+        for (int r = 0; r < 6; ++r) {
+            auto a = vowel(r == 3 ? 240 : 120, 0.5, 0.03);  // one phrase an octave up
+            x.insert(x.end(), a.begin(), a.end());
+            for (int i = 0; i < SR / 5; ++i) x.push_back(float(0.004 * std::sin(2 * PI * 60 * i / SR)));
+        }
+        PsolaVoice v(SR);
+        runBlocks(v, x);
+        CHECK(std::abs(v.speakerF0() / 120 - 1) < 0.04, "speaker model %.1f Hz, want ~120", v.speakerF0());
+    }
+    {  // block size does not change the result
+        auto x = vowel(130, 1.5, 0.2);
+        PsolaParams p;
+        p.pitchRatio = 1.5;
+        p.formantRatio = 1.2;
+        p.breath = 0.3;
+        PsolaVoice a(SR), b(SR);
+        a.setParams(p);
+        b.setParams(p);
+        auto ya = runBlocks(a, x, 480), yb = runBlocks(b, x, 37);
+        double d = 0;
+        for (size_t i = 0; i < ya.size(); ++i) d = std::max(d, std::abs(double(ya[i]) - yb[i]));
+        CHECK(d < 1e-6, "block size changed output by %g", d);
+    }
+    {  // noise (s, sh, f) is not pitched and keeps its level
+        std::mt19937 rng(3);
+        std::normal_distribution<double> nd(0, 0.05);
+        std::vector<float> x(SR * 2);
+        for (auto& s : x) s = float(nd(rng));
+        PsolaVoice v(SR);
+        PsolaParams p;
+        p.pitchRatio = 2.0;
+        p.formantRatio = 1.2;
+        v.setParams(p);
+        auto y = runBlocks(v, x);
+        const double db = 20 * std::log10(rms(y, SR / 2, y.size()) / rms(x, SR / 2, x.size()));
+        CHECK(std::abs(db) < 2.0, "noise level changed %+.1f dB", db);
+        // no periodicity: normalised autocorrelation stays low at all pitch lags
+        double c0 = 0, cmax = 0;
+        const size_t a0 = SR / 2, len = SR;
+        for (size_t i = 0; i < len; ++i) c0 += double(y[a0 + i]) * y[a0 + i];
+        for (int lag = SR / 600; lag <= SR / 50; ++lag) {
+            double c = 0;
+            for (size_t i = 0; i < len; ++i) c += double(y[a0 + i]) * y[a0 + i + size_t(lag)];
+            cmax = std::max(cmax, c / c0);
+        }
+        CHECK(cmax < 0.15, "noise became periodic: autocorrelation %.2f", cmax);
+    }
+    {  // words with pauses and fricatives: no clicks at voicing changes
+        std::vector<float> x;
+        std::mt19937 rng(5);
+        std::normal_distribution<double> nd(0, 0.03);
+        for (int w = 0; w < 5; ++w) {
+            auto a = vowel(110 + 15 * w, 0.35, 0.1);
+            for (size_t i = 0; i < 480; ++i) { a[i] *= float(i / 480.0); a[a.size() - 1 - i] *= float(i / 480.0); }
+            x.insert(x.end(), a.begin(), a.end());
+            for (int i = 0; i < SR / 10; ++i) x.push_back(float(nd(rng) * std::sin(PI * i / (SR / 10))));
+            for (int i = 0; i < SR / 20; ++i) x.push_back(0.0f);
+        }
+        PsolaVoice v(SR);
+        PsolaParams p;
+        p.targetF0 = 210;
+        p.formantRatio = 1.2;
+        p.breath = 0.3;
+        v.setParams(p);
+        auto y = runBlocks(v, x);
+        const double cl = clickiness(y, SR / 2), ref = clickiness(x, SR / 2);
+        CHECK(cl < ref * 1.6 + 5, "psola click ratio %.1f (input %.1f)", cl, ref);
+        float peak = 0;
+        for (float s : y) peak = std::max(peak, std::abs(s));
+        CHECK(peak < 0.6f, "psola peak %.2f", peak);
+    }
+    {  // silence stays silent (breath noise only on voiced sound)
+        PsolaVoice v(SR);
+        PsolaParams p;
+        p.targetF0 = 210;
+        p.breath = 1.0;
+        v.setParams(p);
+        std::vector<float> z(SR, 0.0f);
+        auto y = runBlocks(v, z);
+        CHECK(rms(y, 0, y.size()) < 1e-7, "silence became %g", rms(y, 0, y.size()));
+    }
+}
+
 static void testCoreEffects() {
     std::printf("robot / whisper / vibrato / denoise levels\n");
     auto x = vowel(110, 2.0, 0.2);
@@ -239,27 +401,18 @@ static void testDenoise() {
     CHECK(10 * std::log10(se / sp) < -14, "speech distorted: %.1f dB", 10 * std::log10(se / sp));
 }
 
-static double clickiness(const std::vector<float>& y, size_t from) {
-    std::vector<double> d(y.size(), 0.0);
-    for (size_t i = from + 2; i < y.size(); ++i) d[i] = std::abs(double(y[i]) - 2.0 * y[i - 1] + y[i - 2]);
-    double worst = 0, acc = 0;
-    const size_t W = 480;
-    for (size_t i = from; i < y.size(); ++i) {
-        acc += d[i];
-        if (i >= from + W) acc -= d[i - W];
-        if (i >= from + W) worst = std::max(worst, d[i - W / 2] / (acc / W + 1e-6));
-    }
-    return worst;
-}
 
 static void testPresets() {
     std::printf("all presets through the full chain\n");
     auto x = vowel(115, 2.0, 0.15);
     const double rin = rms(x, SR / 2, x.size());
     double neutral = 0;
+    GlobalValues g = defaultGlobal();
+    g[G_Denoise] = 0.0;  // a perfectly steady test vowel would be taken for noise
     for (const auto& p : builtinPresets()) {
         VoiceChain c(SR, Quality::Balanced);
         c.setVoice(p.full());
+        c.setGlobal(g);
         auto t0 = std::chrono::steady_clock::now();
         auto y = runBlocks(c, x);
         double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
@@ -365,6 +518,41 @@ static int coreTool(int argc, char** argv) {
     return 0;
 }
 
+// --psola in.f32 out.f32 latency target pitchRatio formantRatio breath vibrato dry denoise [speakerHz]
+//   → denoiser + pitch-synchronous core exactly as wired in the chain
+static int psolaTool(int argc, char** argv) {
+    if (argc < 12) return 2;
+    std::ifstream in(argv[2], std::ios::binary | std::ios::ate);
+    const std::streamsize bytes = in.tellg();
+    in.seekg(0);
+    std::vector<float> data(size_t(bytes) / 4);
+    in.read(reinterpret_cast<char*>(data.data()), std::streamsize(data.size() * 4));
+    Denoiser dn(SR);
+    dn.setAmount(std::atof(argv[11]));
+    PsolaVoice v(SR, std::atoi(argv[4]), dn.latency());
+    PsolaParams p;
+    p.targetF0 = std::atof(argv[5]);
+    p.pitchRatio = std::atof(argv[6]);
+    p.formantRatio = std::atof(argv[7]);
+    p.breath = std::atof(argv[8]);
+    p.vibratoDepth = std::atof(argv[9]);
+    p.dry = std::atof(argv[10]);
+    v.setParams(p);
+    if (argc > 12) v.setSpeaker(std::atof(argv[12]), 3000.0);
+    std::vector<float> raw(480);
+    for (size_t i = 0; i < data.size(); i += 480) {
+        const size_t n = std::min<size_t>(480, data.size() - i);
+        std::copy(data.begin() + long(i), data.begin() + long(i + n), raw.begin());
+        dn.process(data.data() + i, n);
+        v.process(data.data() + i, n, raw.data());
+    }
+    std::ofstream out(argv[3], std::ios::binary);
+    out.write(reinterpret_cast<char*>(data.data()), std::streamsize(data.size() * 4));
+    std::printf("latency %d speaker %.1f Hz (%.0f frames) ratio %.3f\n", dn.latency() + v.latency(), v.speakerF0(),
+                v.speakerConfidence(), v.autoRatio());
+    return 0;
+}
+
 // --render in.f32 outdir [quality]  → renders every built-in preset to outdir/NN.f32
 static int renderTool(int argc, char** argv) {
     if (argc < 4) return 2;
@@ -392,10 +580,12 @@ static int renderTool(int argc, char** argv) {
 int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--core") == 0) return coreTool(argc, argv);
     if (argc > 1 && std::strcmp(argv[1], "--render") == 0) return renderTool(argc, argv);
+    if (argc > 1 && std::strcmp(argv[1], "--psola") == 0) return psolaTool(argc, argv);
     testFft();
     testIdentity();
     testPitch();
     testFormant();
+    testPsola();
     testCoreEffects();
     testDenoise();
     testPresets();

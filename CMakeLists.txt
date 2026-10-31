@@ -10,6 +10,8 @@ endif()
 
 # ---------------------------------------------------------------- portable DSP core
 add_library(voxdsp STATIC
+  src/dsp/Denoiser.cpp
+  src/dsp/PsolaVoice.cpp
   src/dsp/SpectralVoice.cpp
   src/dsp/VoiceChain.cpp
   src/dsp/Presets.cpp)

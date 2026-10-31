@@ -6,7 +6,7 @@
 
 namespace vox {
 
-enum class Fmt { Semitones, Percent, PercentOff, Db, Hz, HzHighpass, HzLowpass, Ms, RateHz, Drive, Gate };
+enum class Fmt { Semitones, Percent, PercentOff, Db, Hz, HzHighpass, HzLowpass, Ms, RateHz, Drive, Gate, TargetHz };
 enum class Group { Voice, Tone, Fx, Mic };
 
 struct ParamDef {
@@ -21,6 +21,8 @@ struct ParamDef {
 enum VoiceParamId : int {
     P_Pitch,
     P_Formant,
+    P_TargetF0,
+    P_Breath,
     P_Robot,
     P_Whisper,
     P_VibratoDepth,
@@ -59,8 +61,10 @@ enum GlobalParamId : int {
 };
 
 inline constexpr std::array<ParamDef, kVoiceParamCount> kVoiceParams = {{
-    {"pitch", "Высота голоса", -12.0, 12.0, 0.0, 0.5, Group::Voice, Fmt::Semitones, "Выше — тоньше голос, ниже — грубее. В полутонах (12 = октава)."},
+    {"pitch", "Высота голоса", -12.0, 12.0, 0.0, 0.5, Group::Voice, Fmt::Semitones, "Выше — тоньше голос, ниже — грубее. В полутонах (12 = октава). При включённой «Целевой высоте» — поправка к ней."},
     {"formant", "Тембр (форманты)", -12.0, 12.0, 0.0, 0.5, Group::Voice, Fmt::Semitones, "«Размер» горла. Вверх — ребёнок/девушка, вниз — великан."},
+    {"target_f0", "Целевая высота", 0.0, 320.0, 0.0, 5.0, Group::Voice, Fmt::TargetHz, "Программа сама узнаёт высоту вашего голоса и переносит её сюда — для любого голоса одинаково. 200–230 Гц — женский, 100–130 — мужской. «Выкл» — сдвиг только ползунком «Высота голоса»."},
+    {"breath", "Придыхание", 0.0, 1.0, 0.0, 0.01, Group::Voice, Fmt::PercentOff, "Мягкий воздушный призвук, как у женского голоса."},
     {"robot", "Робот", 0.0, 1.0, 0.0, 0.01, Group::Voice, Fmt::PercentOff, "Металлический монотонный голос."},
     {"whisper", "Шёпот", 0.0, 1.0, 0.0, 0.01, Group::Voice, Fmt::PercentOff, "Убирает звонкость связок — получается шёпот/призрак."},
     {"vibrato_depth", "Дрожание голоса", 0.0, 2.0, 0.0, 0.05, Group::Voice, Fmt::Semitones, "Глубина вибрато в полутонах."},
