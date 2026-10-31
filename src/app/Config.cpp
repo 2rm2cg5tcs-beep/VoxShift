@@ -128,6 +128,8 @@ void Config::load() {
     get(j, "manageDefaultMic", manageDefaultMic);
     get(j, "previousDefaultMic", previousDefaultMic);
     get(j, "firstRunDone", firstRunDone);
+    get(j, "guardPlayback", guardPlayback);
+    get(j, "lastRealOutput", lastRealOutput);
     get(j, "speakerF0", speakerF0);
     get(j, "speakerConf", speakerConf);
     if (!(speakerF0 >= 50.0 && speakerF0 <= 700.0)) speakerF0 = speakerConf = 0.0;
@@ -182,6 +184,8 @@ void Config::save() const {
     j["manageDefaultMic"] = manageDefaultMic;
     j["previousDefaultMic"] = previousDefaultMic;
     j["firstRunDone"] = firstRunDone;
+    j["guardPlayback"] = guardPlayback;
+    j["lastRealOutput"] = lastRealOutput;
     j["speakerF0"] = speakerF0;
     j["speakerConf"] = speakerConf;
     j["tractCm"] = tractCm;

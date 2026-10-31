@@ -79,6 +79,7 @@ private:
     void makeCableDefault();
     void applyCableDefaultOnStart();
     void restoreDefaultMic();
+    void guardPlayback(bool announce);
     void installCable();
 
     void applyHotkeys();

@@ -894,6 +894,10 @@ void App::uiSettingsTab() {
             toast("Не удалось изменить автозапуск", kErr);
         sw("b5", cfg_.startMinimized, "Открывать свёрнутым в трей", nullptr);
         sw("b6", cfg_.closeToTray, "Крестик сворачивает в трей, а не закрывает", nullptr);
+        if (sw("b8", cfg_.guardPlayback, "Не давать Windows уводить звук компьютера в CABLE Input",
+               "Если Windows сделает «CABLE Input» устройством воспроизведения по умолчанию, вы перестанете слышать "
+               "компьютер. Pressvppp сразу вернёт звук на ваши колонки или наушники.") && cfg_.guardPlayback)
+            guardPlayback(true);
         sw("b7", cfg_.restoreMicOnExit, "При выходе вернуть прежний микрофон Windows",
            "После «Выйти полностью» игры и программы снова слышат ваш обычный микрофон. "
            "При следующем запуске Pressvppp снова сделает «CABLE Output» микрофоном по умолчанию.");

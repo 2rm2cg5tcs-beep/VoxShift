@@ -85,6 +85,7 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
     engine_.setVoice(voice_);
     engine_.setGlobal(cfg_.global);
     engine_.setEnabled(cfg_.enabled);
+    if (screenshotDir_.empty()) guardPlayback(true);
     if (cfg_.speakerF0 > 0.0 || cfg_.tractCm > 0.0)
         engine_.setSpeaker(cfg_.speakerF0, cfg_.speakerConf, cfg_.tractCm, cfg_.tractConf);
     if (screenshotDir_.empty()) applyCableDefaultOnStart();
@@ -614,6 +615,7 @@ void App::periodic() {
     }
     if (deviceChangeAt_ > 0 && t >= deviceChangeAt_) {
         deviceChangeAt_ = -1;
+        if (screenshotDir_.empty()) guardPlayback(true);
         refreshDevices();
         refreshSetupStatus();
         if (!engine_.status().running || !engine_.healthy()) {
@@ -634,6 +636,41 @@ void App::periodic() {
         }
     }
     if (visible_ && tab_ == kPageSetup && t - lastSetupCheck_ > 5.0) refreshSetupStatus();
+}
+
+// The PC went silent because Windows plays everything into "CABLE Input"
+// (VB-Cable's installer does that). Put the default playback back on the
+// user's speakers/headphones; remember them while they are the default.
+void App::guardPlayback(bool announce) {
+    const std::wstring def = defaultDeviceId(Flow::Render);
+    if (def.empty()) return;
+    const std::vector<AudioDevice> outs = listDevices(Flow::Render);
+    const AudioDevice* cur = nullptr;
+    for (auto& d : outs)
+        if (d.id == def) cur = &d;
+    if (!cur) return;
+    if (!cur->isVirtual) {
+        const std::string id = narrow(def);
+        if (cfg_.lastRealOutput != id) {
+            cfg_.lastRealOutput = id;
+            saveSoon();
+        }
+        return;
+    }
+    if (!cfg_.guardPlayback || !isCablePlayback(cur->name)) return;
+    const AudioDevice* target = nullptr;
+    for (auto& d : outs)
+        if (!d.isVirtual && narrow(d.id) == cfg_.lastRealOutput) target = &d;
+    if (!target)
+        for (auto& d : outs)
+            if (!d.isVirtual) { target = &d; break; }
+    if (!target) return;  // no real speakers connected at all
+    if (setDefaultDevice(target->id)) {
+        logLine("default playback was %s - moved back to %s", cur->name.c_str(), target->name.c_str());
+        if (announce)
+            toast("Звук компьютера снова идёт в «" + target->name + "» (Windows переключала его в CABLE Input).",
+                  kOk, 8.0);
+    }
 }
 
 void App::makeCableDefault() {

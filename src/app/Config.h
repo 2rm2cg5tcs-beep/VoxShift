@@ -49,6 +49,10 @@ struct Config {
     // "CABLE Output" is the Windows default mic only while Pressvppp runs:
     // switched on at start, the previous microphone is restored on exit
     bool restoreMicOnExit = true;
+    // installing VB-Cable (or Windows itself) may make "CABLE Input" the
+    // default *playback* device — then the PC goes silent. We put it back.
+    bool guardPlayback = true;
+    std::string lastRealOutput;       // endpoint id (UTF-8) of the user's speakers/headphones
     bool manageDefaultMic = false;    // the user asked us to make CABLE the default
     std::string previousDefaultMic;   // endpoint id (UTF-8) of the real default mic
     bool firstRunDone = false;
