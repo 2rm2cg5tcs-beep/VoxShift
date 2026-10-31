@@ -55,13 +55,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          $ErrorActionPreference = 'Continue'   # PS 5.1: redirected native stderr must not abort
           Add-Type -AssemblyName System.Drawing
           Get-ChildItem shots\*.bmp | ForEach-Object {
             $img = [System.Drawing.Image]::FromFile($_.FullName)
             $img.Save(($_.FullName -replace '\.bmp$', '.png'), [System.Drawing.Imaging.ImageFormat]::Png)
             $img.Dispose()
           }
-          gh release delete ci-screenshots --yes --cleanup-tag 2>$null
+          gh release delete ci-screenshots --yes --cleanup-tag
           $files = @(Get-ChildItem shots\* -Include *.png, *.log, *.txt | ForEach-Object { $_.FullName })
           if ($files.Count -gt 0) {
             gh release create ci-screenshots $files --title "CI screenshots" --notes "UI screenshots from the latest build" --prerelease
