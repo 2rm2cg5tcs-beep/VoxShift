@@ -103,9 +103,9 @@ void App::drawUi() {
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
     ImGui::BeginChild("side", ImVec2(sideW, vp->WorkSize.y), ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar(2);   // rounding/padding apply to this child only, not to the cards inside
     uiSidebar(vp->WorkSize.y);
     ImGui::EndChild();
-    ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     // hairline between sidebar and content
     ImGui::GetWindowDrawList()->AddLine(ImVec2(vp->WorkPos.x + sideW, vp->WorkPos.y),
@@ -115,9 +115,9 @@ void App::drawUi() {
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
     ImGui::BeginChild("main", ImVec2(0, vp->WorkSize.y), ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar(2);
     uiMain(vp->WorkSize.x - sideW, vp->WorkSize.y);
     ImGui::EndChild();
-    ImGui::PopStyleVar(2);
     ImGui::End();
     uiModals();
 }
@@ -184,21 +184,28 @@ void App::uiSidebar(float h) {
         tab_ = kPageSettings;
 
     // ---- bottom card: current voice + the big on/off button
-    const float cardH = S(186);
-    const float y = h - cardH - S(12) * 2;
-    if (ImGui::GetCursorPosY() < y) ImGui::SetCursorPosY(y);
+    // (compact variant without the icon tile when the window is short)
+    const float fullH = S(186), compactH = S(128);
+    const float room = h - S(12) - ImGui::GetCursorPosY() - S(10);
+    const bool compact = room < fullH;
+    const float cardH = compact ? compactH : fullH;
+    const float y = h - cardH - S(12);
+    if (ImGui::GetCursorPosY() + S(10) < y) ImGui::SetCursorPosY(y);
+    else verticalGap(10);
     if (beginCard("voicecard", ImVec2(w, cardH), false)) {
-        ImDrawList* cdl = ImGui::GetWindowDrawList();
-        const ImVec2 ip = ImGui::GetCursorScreenPos();
-        const float is = S(38);
-        cdl->AddRectFilled(ip, ImVec2(ip.x + is, ip.y + is), kPanel2, S(10));
-        cdl->AddRect(ip, ImVec2(ip.x + is, ip.y + is), kBorder, S(10));
-        drawIcon(cfg_.enabled ? Icon::Wave : Icon::Mic, ImVec2(ip.x + is * 0.5f, ip.y + is * 0.5f), S(18),
-                 cfg_.enabled ? kText : kMuted);
-        if (cfg_.enabled && engine_.status().running)
-            cdl->AddCircleFilled(ImVec2(ip.x + is - S(2), ip.y + S(2)), S(4.5f), kOk, 12);
-        ImGui::Dummy(ImVec2(is, is));
-        verticalGap(10);
+        if (!compact) {
+            ImDrawList* cdl = ImGui::GetWindowDrawList();
+            const ImVec2 ip = ImGui::GetCursorScreenPos();
+            const float is = S(38);
+            cdl->AddRectFilled(ip, ImVec2(ip.x + is, ip.y + is), kPanel2, S(10));
+            cdl->AddRect(ip, ImVec2(ip.x + is, ip.y + is), kBorder, S(10));
+            drawIcon(cfg_.enabled ? Icon::Wave : Icon::Mic, ImVec2(ip.x + is * 0.5f, ip.y + is * 0.5f), S(18),
+                     cfg_.enabled ? kText : kMuted);
+            if (cfg_.enabled && engine_.status().running)
+                cdl->AddCircleFilled(ImVec2(ip.x + is - S(2), ip.y + S(2)), S(4.5f), kOk, 12);
+            ImGui::Dummy(ImVec2(is, is));
+            verticalGap(10);
+        }
         ImGui::PushFont(g_fonts.bold);
         ImGui::TextUnformatted(cfg_.enabled ? "Голос изменён" : "Обычный голос");
         ImGui::PopFont();
@@ -554,7 +561,7 @@ void App::uiSetupTab() {
             rightAlign(bw);
             ImGui::BeginGroup();
             if (primary) {
-                ImGui::BeginDisabled(which == 1 && cableInstallBusy_);
+                ImGui::BeginDisabled((which == 1 && cableInstallBusy_) || (which == 2 && !cableFound_));
                 if (accentButton(primary, ImVec2(bw, 0))) {
                     if (which == 1) installCable();
                     else if (which == 2) makeCableDefault();

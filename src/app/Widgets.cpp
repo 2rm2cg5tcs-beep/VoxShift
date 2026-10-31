@@ -253,7 +253,7 @@ bool toggleSwitch(const char* id, bool* value, const char* label) {
 
 bool navItem(const char* id, Icon icon, const char* label, bool selected, ImU32 dot) {
     ImGui::PushID(id);
-    const float w = ImGui::GetContentRegionAvail().x, h = S(40);
+    const float w = ImGui::GetContentRegionAvail().x, h = S(38);
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const bool clicked = ImGui::InvisibleButton("nav", ImVec2(w, h));
     const bool hovered = ImGui::IsItemHovered();
