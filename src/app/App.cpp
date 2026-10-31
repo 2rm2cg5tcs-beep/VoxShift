@@ -11,6 +11,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -80,6 +81,7 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
     engine_.setVoice(voice_);
     engine_.setGlobal(cfg_.global);
     engine_.setEnabled(cfg_.enabled);
+    if (cfg_.speakerF0 > 0.0) engine_.setSpeaker(cfg_.speakerF0, cfg_.speakerConf);
     if (screenshotDir_.empty()) applyCableDefaultOnStart();
     refreshDevices();
     refreshSetupStatus();
@@ -400,6 +402,7 @@ LRESULT App::wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             if (w == PBT_APMRESUMEAUTOMATIC) deviceChangeAt_ = now() + 3.0;
             return TRUE;
         case WM_QUERYENDSESSION:
+            syncSpeaker();
             cfg_.save();
             return TRUE;
         case WM_ENDSESSION:
@@ -589,6 +592,15 @@ void App::periodic() {
         }
         for (auto& [text, ok] : msgs) toast(text, ok ? kOk : kErr, 10.0);
     }
+    if (t >= speakerSyncAt_) {
+        // remember the learned voice pitch (every 20 s, when it changed)
+        speakerSyncAt_ = t + 20.0;
+        const double hz = engine_.speakerF0(), conf = engine_.speakerConfidence();
+        if (conf >= 100.0 && (std::abs(hz - cfg_.speakerF0) > 0.5 || conf > cfg_.speakerConf * 1.5 + 50.0)) {
+            syncSpeaker();
+            saveSoon();
+        }
+    }
     if (saveAt_ > 0 && t >= saveAt_) {
         saveAt_ = -1;
         cfg_.save();
@@ -777,8 +789,16 @@ void App::hideToTray() {
     }
 }
 
+void App::syncSpeaker() {
+    if (engine_.speakerConfidence() >= 100.0) {
+        cfg_.speakerF0 = std::round(engine_.speakerF0() * 10.0) / 10.0;
+        cfg_.speakerConf = std::round(engine_.speakerConfidence());
+    }
+}
+
 void App::quit() {
     if (!running_) return;
+    syncSpeaker();
     cfg_.save();
     for (int id = kHkToggle; id <= kHkMonitor; ++id) UnregisterHotKey(hwnd_, id);
     engine_.stop();

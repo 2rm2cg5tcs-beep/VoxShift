@@ -67,6 +67,10 @@ std::string fmtValue(const ParamDef& d, double v) {
             if (v <= -89.5) return "выкл";
             std::snprintf(b, sizeof b, "%.0f дБ", v);
             return b;
+        case Fmt::TargetHz:
+            if (v < 80.0) return "выкл";
+            std::snprintf(b, sizeof b, "%d Гц", int(std::lround(v)));
+            return b;
     }
     return "";
 }
@@ -313,7 +317,7 @@ void App::uiMain(float /*w*/, float h) {
     switch (tab_) {
         case kPagePresets: uiPresetsPage(); break;
         case kPageVoice:
-            uiSliderCard("v1", "Основа", {P_Pitch, P_Formant, P_Dry});
+            uiVoiceBasics();
             uiSliderCard("v2", "Характер", {P_Robot, P_Whisper, P_VibratoDepth, P_VibratoRate});
             break;
         case kPageTone:
@@ -495,6 +499,30 @@ void App::uiSliderCard(const char* id, const char* title, std::initializer_list<
         for (int pid : params) {
             if (sliderRow(kVoiceParams[size_t(pid)], voice_[size_t(pid)], pid)) voiceChanged();
         }
+    }
+    endCard();
+}
+
+void App::uiVoiceBasics() {
+    if (beginCard("v1", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        sectionTitle("Основа");
+        verticalGap(4);
+        for (int pid : {P_TargetF0, P_Pitch, P_Formant, P_Breath, P_Dry})
+            if (sliderRow(kVoiceParams[size_t(pid)], voice_[size_t(pid)], pid)) voiceChanged();
+        verticalGap(2);
+        // what the program has learned about the user's voice
+        const double hz = engine_.speakerF0(), conf = engine_.speakerConfidence();
+        const double shift = std::pow(2.0, voice_[P_Pitch] / 12.0);
+        char b[200];
+        if (conf >= 100.0) {
+            const double out = (voice_[P_TargetF0] >= 80.0 ? voice_[P_TargetF0] : hz) * shift;
+            std::snprintf(b, sizeof b, "Ваш голос ≈ %.0f Гц  →  в игре ≈ %.0f Гц", hz, out);
+        } else {
+            std::snprintf(b, sizeof b, "Скажите пару фраз — программа узнает высоту вашего голоса.");
+        }
+        ImGui::PushFont(g_fonts.caption);
+        textColored(kMuted, b);
+        ImGui::PopFont();
     }
     endCard();
 }

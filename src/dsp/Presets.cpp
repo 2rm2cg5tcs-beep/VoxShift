@@ -1,4 +1,6 @@
-// GENERATED from the reference implementation (56 built-in voices).
+// Built-in voices. Speech voices use auto pitch (P_TargetF0): the program
+// learns the user's own pitch and moves it to the target, so they sound the
+// same for a deep and for a high voice. Levels are loudness-matched on speech.
 #include "Presets.h"
 
 namespace vox {
@@ -16,11 +18,14 @@ const std::vector<BuiltinPreset>& builtinPresets() {
         {"Чуть выше", "Основные", "Немного моложе и легче.", {{P_Pitch, 2.0}, {P_Formant, 1.0}, {P_Level, 0.5}}},
         {"Чуть ниже", "Основные", "Немного старше и солиднее.", {{P_Pitch, -2.0}, {P_Formant, -1.0}, {P_Level, 1.0}}},
         {"Чёткая речь", "Основные", "Подчёркнутая разборчивость для команды.", {{P_Bass, -3.0}, {P_Mid, 2.0}, {P_Treble, 4.0}, {P_Highpass, 110.0}}},
-        {"Девушка", "Персонажи", "Из мужского голоса — женский.", {{P_Pitch, 6.0}, {P_Formant, 3.0}, {P_Bass, -3.0}, {P_Treble, 2.0}}},
-        {"Девушка (мягкая)", "Персонажи", "Нежнее и тише.", {{P_Pitch, 5.0}, {P_Formant, 2.5}, {P_Bass, -4.0}, {P_Treble, 1.0}, {P_Mid, -1.0}, {P_Chorus, 0.12}, {P_Level, 1.5}}},
-        {"Аниме-девочка", "Персонажи", "Высокий звонкий мультяшный голос.", {{P_Pitch, 9.0}, {P_Formant, 4.5}, {P_Bass, -5.0}, {P_Treble, 3.0}}},
-        {"Парень", "Персонажи", "Из женского голоса — мужской.", {{P_Pitch, -6.0}, {P_Formant, -3.0}, {P_Bass, 3.0}, {P_Level, 1.0}}},
-        {"Ребёнок", "Персонажи", "Голос маленького ребёнка.", {{P_Pitch, 7.0}, {P_Formant, 5.0}, {P_Bass, -6.0}, {P_Treble, 2.0}}},
+        {"Девушка", "Персонажи", "Из мужского голоса — естественный женский.", {{P_TargetF0, 210.0}, {P_Formant, 3.5}, {P_Breath, 0.25}, {P_Bass, -2.0}}},
+        {"Девушка (звонкая)", "Персонажи", "Молодой, светлый женский голос.", {{P_TargetF0, 240.0}, {P_Formant, 4.0}, {P_Breath, 0.15}, {P_Treble, 1.0}}},
+        {"Женщина", "Персонажи", "Взрослый, ниже и спокойнее.", {{P_TargetF0, 180.0}, {P_Formant, 2.5}, {P_Breath, 0.2}, {P_Bass, -1.0}}},
+        {"Девушка (мягкая)", "Персонажи", "Нежнее, с придыханием.", {{P_TargetF0, 200.0}, {P_Formant, 3.0}, {P_Breath, 0.45}, {P_Bass, -3.0}, {P_Treble, -1.0}}},
+        {"Аниме-девочка", "Персонажи", "Высокий звонкий мультяшный голос.", {{P_TargetF0, 300.0}, {P_Formant, 5.0}, {P_Breath, 0.15}, {P_Bass, -4.0}, {P_Treble, 2.0}}},
+        {"Парень", "Персонажи", "Из женского голоса — мужской.", {{P_TargetF0, 115.0}, {P_Formant, -3.0}, {P_Bass, 2.0}}},
+        {"Мужчина (бас)", "Персонажи", "Низкий взрослый мужской голос.", {{P_TargetF0, 88.0}, {P_Formant, -3.5}, {P_Bass, 2.0}}},
+        {"Ребёнок", "Персонажи", "Голос маленького ребёнка.", {{P_TargetF0, 280.0}, {P_Formant, 6.0}, {P_Breath, 0.1}, {P_Bass, -5.0}, {P_Treble, 1.0}}},
         {"Старик", "Персонажи", "Дрожащий голос пожилого человека.", {{P_Pitch, -1.0}, {P_Formant, -0.5}, {P_VibratoDepth, 0.35}, {P_VibratoRate, 6.5}, {P_Bass, -4.0}, {P_Mid, 3.0}, {P_Highpass, 150.0}, {P_Level, 1.5}}},
         {"Великан", "Персонажи", "Огромный и медленный.", {{P_Pitch, -7.0}, {P_Formant, -5.0}, {P_Bass, 4.0}, {P_ReverbMix, 0.18}, {P_ReverbSize, 0.7}, {P_Level, 1.0}}},
         {"Гном", "Персонажи", "Маленький ворчун.", {{P_Pitch, 3.0}, {P_Formant, 5.0}, {P_Mid, 2.0}, {P_Level, -0.5}}},

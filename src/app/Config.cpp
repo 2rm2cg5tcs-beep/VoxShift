@@ -2,6 +2,7 @@
 
 #include "nlohmann/json.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -127,6 +128,10 @@ void Config::load() {
     get(j, "manageDefaultMic", manageDefaultMic);
     get(j, "previousDefaultMic", previousDefaultMic);
     get(j, "firstRunDone", firstRunDone);
+    get(j, "speakerF0", speakerF0);
+    get(j, "speakerConf", speakerConf);
+    if (!(speakerF0 >= 50.0 && speakerF0 <= 700.0)) speakerF0 = speakerConf = 0.0;
+    speakerConf = std::clamp(speakerConf, 0.0, 1e7);
     get(j, "trayHintShown", trayHintShown);
 
     userPresets.clear();
@@ -173,6 +178,8 @@ void Config::save() const {
     j["manageDefaultMic"] = manageDefaultMic;
     j["previousDefaultMic"] = previousDefaultMic;
     j["firstRunDone"] = firstRunDone;
+    j["speakerF0"] = speakerF0;
+    j["speakerConf"] = speakerConf;
     j["trayHintShown"] = trayHintShown;
     json arr = json::array();
     for (const auto& u : userPresets)

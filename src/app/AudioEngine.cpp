@@ -238,6 +238,7 @@ bool AudioEngine::start(const EngineSettings& s) {
     }
 
     chain_ = std::make_unique<VoiceChain>(kRate, s.quality);
+    if (speakerHz_ > 0.0) chain_->setSpeaker(speakerHz_, speakerConf_);
     chain_->setVoice(voice_);
     chain_->setGlobal(global_);
     chain_->setEnabled(enabled_);
@@ -265,6 +266,20 @@ bool AudioEngine::start(const EngineSettings& s) {
     return true;
 }
 
+void AudioEngine::setSpeaker(double hz, double confidence) {
+    speakerHz_ = hz;
+    speakerConf_ = confidence;
+    if (chain_) chain_->setSpeaker(hz, confidence);
+}
+
+double AudioEngine::speakerF0() const {
+    return (chain_ && chain_->speakerConfidence() > 0.0) ? chain_->speakerF0() : speakerHz_;
+}
+
+double AudioEngine::speakerConfidence() const {
+    return (chain_ && chain_->speakerConfidence() > 0.0) ? chain_->speakerConfidence() : speakerConf_;
+}
+
 void AudioEngine::stop() {
     stop_.store(true);
     for (auto* s : {capture_.get(), render_.get(), monitor_.get()})
@@ -274,6 +289,10 @@ void AudioEngine::stop() {
     capture_.reset();
     render_.reset();
     monitor_.reset();
+    if (chain_ && chain_->speakerConfidence() > 0.0) {
+        speakerHz_ = chain_->speakerF0();
+        speakerConf_ = chain_->speakerConfidence();
+    }
     chain_.reset();
     status_.running = false;
     inLevel_.store(0);

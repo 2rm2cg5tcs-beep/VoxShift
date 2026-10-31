@@ -49,6 +49,8 @@ private:
     void uiMain(float w, float h);
     void uiPresetsPage();
     void uiSliderCard(const char* id, const char* title, std::initializer_list<int> params);
+    void uiVoiceBasics();
+    void syncSpeaker();
     void uiMicTab();
     void uiSetupTab();
     void uiSettingsTab();
@@ -133,6 +135,7 @@ private:
     // timers (seconds, steady clock)
     double now() const;
     double saveAt_ = -1, lastHealth_ = 0, nextRetry_ = 0, deviceChangeAt_ = -1, lastSetupCheck_ = 0;
+    double speakerSyncAt_ = 20.0;
     int retryCount_ = 0;
 
     // background tasks → UI

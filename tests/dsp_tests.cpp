@@ -553,7 +553,7 @@ static int psolaTool(int argc, char** argv) {
     return 0;
 }
 
-// --render in.f32 outdir [quality]  → renders every built-in preset to outdir/NN.f32
+// --render in.f32 outdir [quality] [speakerHz]  → renders every built-in preset to outdir/NN.f32 (+ names.txt)
 static int renderTool(int argc, char** argv) {
     if (argc < 4) return 2;
     std::ifstream in(argv[2], std::ios::binary | std::ios::ate);
@@ -562,9 +562,13 @@ static int renderTool(int argc, char** argv) {
     std::vector<float> x(size_t(bytes) / 4);
     in.read(reinterpret_cast<char*>(x.data()), std::streamsize(x.size() * 4));
     const Quality q = (argc > 4 && std::atoi(argv[4])) ? Quality::High : Quality::Balanced;
+    const double speaker = argc > 5 ? std::atof(argv[5]) : 0.0;
     int idx = 0;
+    std::ofstream names(std::string(argv[3]) + "/names.txt");
     for (const auto& p : builtinPresets()) {
+        names << p.name << "\n";
         VoiceChain c(SR, q);
+        if (speaker > 0) c.setSpeaker(speaker, 3000.0);
         c.setVoice(p.full());
         std::vector<float> y = x;
         for (size_t i = 0; i < y.size(); i += 480) c.process(y.data() + i, std::min<size_t>(480, y.size() - i));

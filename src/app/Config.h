@@ -52,6 +52,8 @@ struct Config {
     bool manageDefaultMic = false;    // the user asked us to make CABLE the default
     std::string previousDefaultMic;   // endpoint id (UTF-8) of the real default mic
     bool firstRunDone = false;
+    // typical pitch of the user's voice, learned while speaking (auto pitch)
+    double speakerF0 = 0.0, speakerConf = 0.0;
     bool trayHintShown = false;
 
     std::vector<UserPreset> userPresets;

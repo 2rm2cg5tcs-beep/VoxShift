@@ -155,6 +155,15 @@ void PsolaVoice::setSpeaker(double hz, double confidence) {
     speakerHz_.store(hz, std::memory_order_relaxed);
 }
 
+// With auto pitch the formant shift scales with how far the voice is moved:
+// a man choosing "Девушка" gets the full shift, a woman choosing it keeps
+// her own timbre (instead of turning into a child).
+double PsolaVoice::effectiveAlpha() const {
+    if (p_.targetF0 <= 0.0 || p_.formantRatio == 1.0) return p_.formantRatio;
+    const double s = std::min(1.0, std::abs(std::log2(autoRatio())) / std::log2(1.6));
+    return std::pow(p_.formantRatio, s);
+}
+
 double PsolaVoice::autoRatio() const {
     if (p_.targetF0 <= 0.0) return 1.0;
     return std::clamp(p_.targetF0 / std::exp2(spk_), 0.35, 3.2);
@@ -165,7 +174,8 @@ void PsolaVoice::setParams(const PsolaParams& p) {
     if (identity_ && !id) restartSynthesis(n_ - int64_t(D_) + int64_t(G_));
     identity_ = id;
     p_ = p;
-    if (std::abs(p.formantRatio - sincAlpha_) > 1e-9) buildSinc(p.formantRatio);
+    const double a = effectiveAlpha();
+    if (std::abs(a - sincAlpha_) > 1e-9) buildSinc(a);
 }
 
 void PsolaVoice::buildSinc(double alpha) {
@@ -526,7 +536,8 @@ double PsolaVoice::positionOf(double phi) const {
 void PsolaVoice::synthesise(int64_t emitStart, int64_t emitEnd) {
     const int64_t availIn = n_;
     const int64_t availAna = n_ + int64_t(ahead_);
-    const double alpha = p_.formantRatio;
+    const double alpha = effectiveAlpha();
+    if (std::abs(alpha - sincAlpha_) > 0.003) buildSinc(alpha);
     const double margin = double(G_) + 64.0;
     const double guard = kTaps;
     for (int loop = 0; loop < 4096; ++loop) {

@@ -70,6 +70,13 @@ public:
     float outLevel() const { return outLevel_.load(); }
     float cpuLoad() const { return cpu_.load(); }
 
+    // The pitch of the user's voice as learned by the voice core (kept across
+    // restarts of the engine; seeded from the saved settings).
+    void setSpeaker(double hz, double confidence);
+    double speakerF0() const;
+    double speakerConfidence() const;
+    double currentF0() const { return chain_ ? chain_->currentF0() : 0.0; }
+
 private:
     struct Stream;
     void captureLoop(Stream* st);
@@ -80,6 +87,7 @@ private:
     VoiceValues voice_;
     GlobalValues global_;
     bool enabled_ = true;
+    double speakerHz_ = 0.0, speakerConf_ = 0.0;
 
     SpscRing outRing_, monRing_;
     std::unique_ptr<Stream> capture_, render_, monitor_;

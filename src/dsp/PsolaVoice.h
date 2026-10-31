@@ -68,6 +68,7 @@ public:
     // Pitch of the last analysed frame (0 = not voiced), for meters.
     double currentF0() const { return lastF0_.load(std::memory_order_relaxed); }
     double autoRatio() const;
+    double effectiveAlpha() const;  // formant ratio actually applied
 
 private:
     struct Frame {
