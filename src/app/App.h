@@ -74,6 +74,8 @@ private:
     void refreshSetupStatus();
     void periodic();
     void makeCableDefault();
+    void applyCableDefaultOnStart();
+    void restoreDefaultMic();
     void installCable();
 
     void applyHotkeys();
@@ -125,6 +127,7 @@ private:
 
     // modals
     bool openSaveModal_ = false;
+    bool openQuitModal_ = false;
     char saveName_[128] = {};
 
     // timers (seconds, steady clock)

@@ -21,6 +21,7 @@ inline constexpr UINT WM_APP_SHOW = WM_APP + 1;      // second instance → show
 inline constexpr UINT WM_APP_TRAY = WM_APP + 2;      // tray icon callback
 inline constexpr UINT WM_APP_DEVICES = WM_APP + 3;   // audio endpoints changed
 inline constexpr UINT WM_APP_WAKE = WM_APP + 4;      // background task finished
+inline constexpr UINT WM_APP_QUIT = WM_APP + 5;      // "exit completely" button
 
 std::wstring widen(const std::string& s);
 std::string narrow(const std::wstring& s);

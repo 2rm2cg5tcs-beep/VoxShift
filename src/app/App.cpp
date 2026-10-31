@@ -80,6 +80,7 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
     engine_.setVoice(voice_);
     engine_.setGlobal(cfg_.global);
     engine_.setEnabled(cfg_.enabled);
+    if (screenshotDir_.empty()) applyCableDefaultOnStart();
     refreshDevices();
     refreshSetupStatus();
 
@@ -392,6 +393,9 @@ LRESULT App::wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             return 0;
         case WM_APP_WAKE:
             return 0;
+        case WM_APP_QUIT:
+            quit();
+            return 0;
         case WM_POWERBROADCAST:
             if (w == PBT_APMRESUMEAUTOMATIC) deviceChangeAt_ = now() + 3.0;
             return TRUE;
@@ -399,8 +403,9 @@ LRESULT App::wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             cfg_.save();
             return TRUE;
         case WM_ENDSESSION:
-            if (w) {
+            if (w) {   // Windows shuts down: leave the microphone as it was before us
                 engine_.stop();
+                restoreDefaultMic();
                 cfg_.save();
             }
             return 0;
@@ -615,26 +620,54 @@ void App::periodic() {
 void App::makeCableDefault() {
     // pin the real microphone first: once the cable is the default recording
     // device, "automatic" must not pick the cable itself
-    if (cfg_.micDevice.empty() && engine_.status().running) cfg_.micDevice = engine_.status().micName;
+    if (cfg_.micDevice.empty()) {
+        const AudioDevice mic = engine_.status().running ? AudioDevice{} : resolveMic("");
+        cfg_.micDevice = engine_.status().running ? engine_.status().micName : mic.name;
+    }
     const AudioDevice cable = findCableRecording();
     if (cable.id.empty()) {
         toast("Устройство «CABLE Output» не найдено. Установите VB-Cable и перезагрузите компьютер.", kErr, 8.0);
         return;
     }
+    cfg_.manageDefaultMic = true;
     const std::wstring prev = defaultDeviceId(Flow::Capture);
+    if (!prev.empty() && prev != cable.id) cfg_.previousDefaultMic = narrow(prev);
     if (prev == cable.id) {
         toast("«" + cable.name + "» уже микрофон по умолчанию.", kOk);
-        return;
-    }
-    if (cfg_.previousDefaultMic.empty() && !prev.empty()) cfg_.previousDefaultMic = narrow(prev);
-    if (setDefaultDevice(cable.id)) {
-        toast("Готово: «" + cable.name + "» теперь микрофон по умолчанию для игр.", kOk, 8.0);
+    } else if (setDefaultDevice(cable.id)) {
+        toast("Готово: «" + cable.name + "» теперь микрофон по умолчанию. При выходе из Pressvppp вернётся прежний.", kOk, 8.0);
     } else {
         toast("Windows не дала сменить устройство — сделайте это вручную в открывшемся окне.", kErr, 8.0);
         openSoundSettings(true);
     }
-    saveSoon();
+    cfg_.save();
     refreshSetupStatus();
+}
+
+// The cable is the default mic only while the app runs: re-apply it at start
+// (the previous microphone was restored when the app last exited).
+void App::applyCableDefaultOnStart() {
+    if (!cfg_.manageDefaultMic) return;
+    const AudioDevice cable = findCableRecording();
+    if (cable.id.empty()) return;
+    const std::wstring prev = defaultDeviceId(Flow::Capture);
+    if (prev == cable.id) return;
+    if (!prev.empty()) cfg_.previousDefaultMic = narrow(prev);
+    if (cfg_.micDevice.empty()) cfg_.micDevice = resolveMic("").name;
+    if (setDefaultDevice(cable.id)) logLine("CABLE Output set as default mic");
+    saveSoon();
+}
+
+// Hand the microphone back exactly as it was before Pressvppp.
+void App::restoreDefaultMic() {
+    if (!cfg_.restoreMicOnExit || !cfg_.manageDefaultMic || cfg_.previousDefaultMic.empty()) return;
+    const AudioDevice cable = findCableRecording();
+    const std::wstring current = defaultDeviceId(Flow::Capture);
+    if (!cable.id.empty() && current != cable.id) return;   // the user changed it meanwhile — leave it
+    const std::wstring prev = widen(cfg_.previousDefaultMic);
+    bool exists = false;
+    for (const auto& d : listDevices(Flow::Capture)) exists = exists || d.id == prev;
+    if (exists && setDefaultDevice(prev)) logLine("default mic restored");
 }
 
 void App::installCable() {
@@ -707,7 +740,7 @@ void App::showTrayMenu() {
     add(menu, MF_STRING | (cfg_.monitorEnabled ? MF_CHECKED : 0), kCmdMonitor, "Слышать себя");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(presetsMenu), widen("Пресет: " + cfg_.preset).c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    add(menu, MF_STRING, kCmdExit, "Выход");
+    add(menu, MF_STRING, kCmdExit, "Выйти полностью");
 
     POINT pt;
     GetCursorPos(&pt);
@@ -739,7 +772,7 @@ void App::hideToTray() {
     if (!cfg_.trayHintShown) {
         cfg_.trayHintShown = true;
         tray_.balloon("Pressvppp работает в фоне",
-                      "Голос продолжает меняться. Значок возле часов: правый клик → «Выход».");
+                      "Голос продолжает меняться. Закрыть полностью — кнопка выхода в окне или правый клик по значку → «Выйти полностью».");
         saveSoon();
     }
 }
@@ -750,9 +783,10 @@ void App::quit() {
     for (int id = kHkToggle; id <= kHkMonitor; ++id) UnregisterHotKey(hwnd_, id);
     engine_.stop();
     watcher_.stop();
-    if (cfg_.restoreMicOnExit && !cfg_.previousDefaultMic.empty()) setDefaultDevice(widen(cfg_.previousDefaultMic));
+    restoreDefaultMic();
     tray_.destroy();
     running_ = false;
+    logLine("quit requested - shutting down");
     DestroyWindow(hwnd_);
 }
 

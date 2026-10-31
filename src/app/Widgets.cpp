@@ -220,6 +220,11 @@ void drawIcon(Icon icon, ImVec2 c, float s, ImU32 color) {
             dl->AddLine(ImVec2(c.x - h, c.y), ImVec2(c.x - h + s * 0.32f, c.y - s * 0.32f), color, t);
             dl->AddLine(ImVec2(c.x - h, c.y), ImVec2(c.x - h + s * 0.32f, c.y + s * 0.32f), color, t);
             break;
+        case Icon::Power:
+            dl->PathArcTo(ImVec2(c.x, c.y + s * 0.04f), h * 0.82f, -3.14159f * 0.5f + 0.75f, 3.14159f * 1.5f - 0.75f, 20);
+            dl->PathStroke(color, 0, t);
+            dl->AddLine(ImVec2(c.x, c.y - h), ImVec2(c.x, c.y - s * 0.02f), color, t);
+            break;
         case Icon::Headphones:
             dl->PathArcTo(ImVec2(c.x, c.y + s * 0.05f), h * 0.85f, 3.14159f, 2 * 3.14159f, 16);
             dl->PathStroke(color, 0, t);

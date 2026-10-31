@@ -32,7 +32,7 @@ inline const ImU32 kOff = IM_COL32(52, 52, 52, 255);
 inline const ImU32 kOffHover = IM_COL32(62, 62, 62, 255);
 inline const ImU32 kGrab = IM_COL32(245, 245, 245, 255);
 
-enum class Icon { Grid, Wave, Sliders, Sparkle, Mic, Bolt, Gear, Search, Star, StarFilled, Back, Headphones };
+enum class Icon { Grid, Wave, Sliders, Sparkle, Mic, Bolt, Gear, Search, Star, StarFilled, Back, Headphones, Power };
 void drawIcon(Icon icon, ImVec2 center, float size, ImU32 color);
 
 ImVec4 col(ImU32 c);

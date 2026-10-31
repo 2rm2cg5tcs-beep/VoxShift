@@ -244,8 +244,8 @@ void App::uiMain(float /*w*/, float h) {
         ImGui::SameLine(0, S(8));
         ImGui::TextUnformatted(tab_ == kPagePresets ? "Пресеты" : kPageTitles[tab_]);
 
-        // right side: monitor + preset arrows
-        const float arrowsW = S(38) * 2 + S(6);
+        // right side: monitor + preset arrows + quit
+        const float arrowsW = S(38) * 3 + S(6) * 2;
         bool mon = cfg_.monitorEnabled;
         const float monW = S(44) + ImGui::CalcTextSize("Слышать себя").x;
         rightAlign(monW + S(18) + arrowsW);
@@ -257,6 +257,12 @@ void App::uiMain(float /*w*/, float h) {
         ImGui::SameLine(0, S(6));
         if (ghostButton("▶", ImVec2(S(38), rh))) stepPreset(+1);
         hintTooltip("Следующий пресет");
+        ImGui::SameLine(0, S(6));
+        const ImVec2 pp = ImGui::GetCursorScreenPos();
+        if (ghostButton("##quit", ImVec2(S(38), rh))) openQuitModal_ = true;
+        const bool qh = ImGui::IsItemHovered();
+        drawIcon(Icon::Power, ImVec2(pp.x + S(19), pp.y + rh * 0.5f), S(15), qh ? kErr : kMuted);
+        hintTooltip("Выйти полностью: программа закроется, звук станет как раньше");
     }
     verticalGap(18);
 
@@ -738,7 +744,8 @@ void App::uiSettingsTab() {
         sw("b5", cfg_.startMinimized, "Открывать свёрнутым в трей", nullptr);
         sw("b6", cfg_.closeToTray, "Крестик сворачивает в трей, а не закрывает", nullptr);
         sw("b7", cfg_.restoreMicOnExit, "При выходе вернуть прежний микрофон Windows",
-           "Удобно, если выключаете Pressvppp и хотите обычный микрофон в играх.");
+           "После «Выйти полностью» игры и программы снова слышат ваш обычный микрофон. "
+           "При следующем запуске Pressvppp снова сделает «CABLE Output» микрофоном по умолчанию.");
     }
     endCard();
 
@@ -749,6 +756,8 @@ void App::uiSettingsTab() {
         if (ghostButton("Папка настроек")) openPath(dataDir());
         ImGui::SameLine();
         if (ghostButton("Журнал работы")) openPath(dataDir() + L"\\pressvppp.log");
+        ImGui::SameLine();
+        if (ghostButton("Выйти полностью")) openQuitModal_ = true;
     }
     endCard();
 }
@@ -777,6 +786,31 @@ void App::uiModals() {
         const float bw = (ImGui::GetContentRegionAvail().x - S(10)) * 0.5f;
         if (gradientButton("Сохранить", ImVec2(bw, S(38))) || enter) {
             if (saveUserPreset(saveName_)) ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine(0, S(10));
+        if (ghostButton("Отмена", ImVec2(bw, S(38))) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (openQuitModal_) {
+        ImGui::OpenPopup("quit_confirm");
+        openQuitModal_ = false;
+    }
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(S(440), 0));
+    if (ImGui::BeginPopupModal("quit_confirm", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+        ImGui::PushFont(g_fonts.huge);
+        ImGui::TextUnformatted("Выйти из Pressvppp полностью?");
+        ImGui::PopFont();
+        textWrappedColored(kMuted, cfg_.restoreMicOnExit && cfg_.manageDefaultMic
+                                       ? "Программа закроется и не останется в трее. Игры и программы снова будут слышать "
+                                         "ваш обычный микрофон — как до Pressvppp."
+                                       : "Программа закроется и не останется в трее. Изменение голоса прекратится.");
+        verticalGap(10);
+        const float bw = (ImGui::GetContentRegionAvail().x - S(10)) * 0.5f;
+        if (gradientButton("Выйти", ImVec2(bw, S(38)))) {
+            ImGui::CloseCurrentPopup();
+            PostMessageW(hwnd_, WM_APP_QUIT, 0, 0);   // quit outside of the ImGui frame
         }
         ImGui::SameLine(0, S(10));
         if (ghostButton("Отмена", ImVec2(bw, S(38))) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();

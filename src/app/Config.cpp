@@ -124,6 +124,7 @@ void Config::load() {
     get(j, "closeToTray", closeToTray);
     get(j, "autostart", autostart);
     get(j, "restoreMicOnExit", restoreMicOnExit);
+    get(j, "manageDefaultMic", manageDefaultMic);
     get(j, "previousDefaultMic", previousDefaultMic);
     get(j, "firstRunDone", firstRunDone);
     get(j, "trayHintShown", trayHintShown);
@@ -169,6 +170,7 @@ void Config::save() const {
     j["closeToTray"] = closeToTray;
     j["autostart"] = autostart;
     j["restoreMicOnExit"] = restoreMicOnExit;
+    j["manageDefaultMic"] = manageDefaultMic;
     j["previousDefaultMic"] = previousDefaultMic;
     j["firstRunDone"] = firstRunDone;
     j["trayHintShown"] = trayHintShown;

@@ -46,8 +46,11 @@ struct Config {
     bool startMinimized = false;
     bool closeToTray = true;
     bool autostart = false;
-    bool restoreMicOnExit = false;
-    std::string previousDefaultMic;   // endpoint id (UTF-8)
+    // "CABLE Output" is the Windows default mic only while Pressvppp runs:
+    // switched on at start, the previous microphone is restored on exit
+    bool restoreMicOnExit = true;
+    bool manageDefaultMic = false;    // the user asked us to make CABLE the default
+    std::string previousDefaultMic;   // endpoint id (UTF-8) of the real default mic
     bool firstRunDone = false;
     bool trayHintShown = false;
 
