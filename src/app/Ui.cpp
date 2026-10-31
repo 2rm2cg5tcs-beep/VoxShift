@@ -625,6 +625,44 @@ void App::uiVoiceMap() {
     }
 }
 
+void App::uiVoiceTest() {
+    if (beginCard("vtest", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        sectionTitle("Проба голоса");
+        textWrappedColored(kMuted, "Запишите 6 секунд — программа сразу проиграет, как вас слышат в игре и Discord. "
+                                   "Честнее, чем «Слышать себя»: не мешает собственный голос в голове и эхо из динамиков.");
+        verticalGap(4);
+        const bool running = engine_.status().running;
+        if (testPhase_ == 1) {
+            const float p = engine_.recordingProgress();
+            char b[64];
+            std::snprintf(b, sizeof b, "Говорите…  %d", std::max(1, int(std::ceil(6.0f * (1.0f - p)))));
+            ImGui::BeginDisabled();
+            accentButton(b, ImVec2(S(200), 0));
+            ImGui::EndDisabled();
+            ImGui::SameLine(0, S(12));
+            levelMeter(engine_.inLevel(), std::max(S(80), ImGui::GetContentRegionAvail().x), S(10));
+        } else {
+            ImGui::BeginDisabled(!running);
+            if (accentButton(testPhase_ == 2 ? "Записать заново" : "Записать пробу", ImVec2(S(200), 0))) {
+                stopWav();
+                if (engine_.startRecording(6.0)) testPhase_ = 1;
+            }
+            ImGui::EndDisabled();
+            if (!running) hintTooltip("Звук не запущен — проверьте «Быструю настройку».");
+            if (testPhase_ == 2) {
+                const std::wstring dir = dataDir();
+                ImGui::SameLine(0, S(8));
+                if (ghostButton("▶  Как слышат другие", ImVec2(S(190), 0))) playWavFile(dir + L"\\проба_голос.wav");
+                ImGui::SameLine(0, S(8));
+                if (ghostButton("▶  Мой голос", ImVec2(S(130), 0))) playWavFile(dir + L"\\проба_оригинал.wav");
+                ImGui::SameLine(0, S(8));
+                if (ghostButton("Папка с записями")) openPath(dir);
+            }
+        }
+    }
+    endCard();
+}
+
 void App::uiVoiceBasics() {
     if (beginCard("vmap", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
         sectionTitle("Карта голоса");
@@ -647,6 +685,7 @@ void App::uiVoiceBasics() {
         ImGui::PopFont();
     }
     endCard();
+    uiVoiceTest();
     uiSliderCard("v1", "Основа", {P_TargetF0, P_TargetVtl, P_Pitch, P_Formant, P_Intonation, P_Breath, P_Dry});
 }
 

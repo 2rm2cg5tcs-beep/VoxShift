@@ -42,6 +42,10 @@ void openSoundSettings(bool recording);
 // 'on' = rising, 'off' = falling, 'switch' = short blip. Asynchronous.
 enum class Cue { On, Off, Switch };
 void playCue(Cue c);
+// 16-bit mono WAV; returns false on I/O error.
+bool writeWav(const std::wstring& path, const float* x, size_t n, int sampleRate);
+void playWavFile(const std::wstring& path);   // asynchronously, on the default output
+void stopWav();
 
 std::string formatHotkey(UINT mods, UINT vk);   // "Ctrl + Alt + V"
 

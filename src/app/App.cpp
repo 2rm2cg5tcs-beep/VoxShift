@@ -598,6 +598,8 @@ void App::periodic() {
         }
         for (auto& [text, ok] : msgs) toast(text, ok ? kOk : kErr, 10.0);
     }
+    if (testPhase_ == 1 && engine_.recordingProgress() >= 1.0f) finishVoiceTest();
+    if (testPhase_ == 1 && !engine_.recordingActive() && engine_.recordingProgress() < 1.0f) testPhase_ = 0;
     if (t >= speakerSyncAt_) {
         // remember the learned voice pitch (every 20 s, when it changed)
         speakerSyncAt_ = t + 20.0;
@@ -636,6 +638,38 @@ void App::periodic() {
         }
     }
     if (visible_ && tab_ == kPageSetup && t - lastSetupCheck_ > 5.0) refreshSetupStatus();
+}
+
+// Voice test: the recorded microphone is run through a copy of the voice chain
+// with the same settings and the learned speaker, saved next to the settings
+// and played on the default output — what others hear, without hearing
+// yourself live (and without speaker → laptop-mic feedback).
+void App::finishVoiceTest() {
+    std::vector<float> raw = engine_.takeRecording();
+    testPhase_ = 0;
+    if (raw.empty()) return;
+    const int sr = 48000;
+    VoiceChain chain(sr, cfg_.quality == 1 ? Quality::High : Quality::Balanced);
+    chain.setSpeaker(engine_.speakerF0(), engine_.speakerConfidence(), engine_.vocalTract(),
+                     engine_.vocalTractConfidence());
+    chain.setGlobal(cfg_.global);
+    chain.setVoice(voice_);
+    chain.setEnabled(true);
+    const size_t lat = size_t(chain.latencySamples());
+    std::vector<float> y(raw.size() + lat, 0.0f);
+    std::copy(raw.begin(), raw.end(), y.begin());
+    for (size_t i = 0; i < y.size(); i += 480) chain.process(y.data() + i, std::min<size_t>(480, y.size() - i));
+    y.erase(y.begin(), y.begin() + long(lat));
+    const std::wstring dir = dataDir();
+    const bool ok = writeWav(dir + L"\\проба_оригинал.wav", raw.data(), raw.size(), sr) &&
+                    writeWav(dir + L"\\проба_голос.wav", y.data(), y.size(), sr);
+    if (!ok) {
+        toast("Не удалось сохранить запись пробы.", kErr);
+        return;
+    }
+    logLine("voice test: %zu samples, preset %s", raw.size(), cfg_.preset.c_str());
+    testPhase_ = 2;
+    playWavFile(dir + L"\\проба_голос.wav");
 }
 
 // The PC went silent because Windows plays everything into "CABLE Input"

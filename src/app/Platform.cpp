@@ -154,6 +154,32 @@ void playCue(Cue c) {
     PlaySoundW(reinterpret_cast<LPCWSTR>(w.data()), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
 }
 
+bool writeWav(const std::wstring& path, const float* x, size_t n, int sampleRate) {
+    FILE* f = _wfopen(path.c_str(), L"wb");
+    if (!f) return false;
+    const uint32_t dataBytes = uint32_t(n * 2);
+    char h[44];
+    auto put32 = [&](size_t at, uint32_t v) { std::memcpy(&h[at], &v, 4); };
+    auto put16 = [&](size_t at, uint16_t v) { std::memcpy(&h[at], &v, 2); };
+    std::memcpy(&h[0], "RIFF", 4); put32(4, 36 + dataBytes); std::memcpy(&h[8], "WAVEfmt ", 8);
+    put32(16, 16); put16(20, 1); put16(22, 1); put32(24, uint32_t(sampleRate)); put32(28, uint32_t(sampleRate * 2));
+    put16(32, 2); put16(34, 16);
+    std::memcpy(&h[36], "data", 4); put32(40, dataBytes);
+    bool ok = fwrite(h, 1, 44, f) == 44;
+    std::vector<int16_t> pcm(n);
+    for (size_t i = 0; i < n; ++i) {
+        const float v = std::isfinite(x[i]) ? std::clamp(x[i], -1.0f, 1.0f) : 0.0f;
+        pcm[i] = int16_t(std::lround(v * 32767.0f));
+    }
+    ok = ok && fwrite(pcm.data(), 2, n, f) == n;
+    fclose(f);
+    return ok;
+}
+
+void playWavFile(const std::wstring& path) { PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT); }
+
+void stopWav() { PlaySoundW(nullptr, nullptr, 0); }
+
 // ---------------------------------------------------------------- hotkeys
 static std::string keyName(UINT vk) {
     if ((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9')) return std::string(1, char(vk));

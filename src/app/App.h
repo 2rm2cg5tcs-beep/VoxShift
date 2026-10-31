@@ -51,6 +51,8 @@ private:
     void uiSliderCard(const char* id, const char* title, std::initializer_list<int> params);
     void uiVoiceBasics();
     void uiVoiceMap();
+    void uiVoiceTest();
+    void finishVoiceTest();
     void syncSpeaker();
     void uiMicTab();
     void uiSetupTab();
@@ -138,6 +140,7 @@ private:
     double now() const;
     double saveAt_ = -1, lastHealth_ = 0, nextRetry_ = 0, deviceChangeAt_ = -1, lastSetupCheck_ = 0;
     double speakerSyncAt_ = 20.0;
+    int testPhase_ = 0;   // voice test: 0 idle, 1 recording, 2 ready
     int retryCount_ = 0;
 
     // background tasks → UI

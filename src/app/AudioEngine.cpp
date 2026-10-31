@@ -266,6 +266,28 @@ bool AudioEngine::start(const EngineSettings& s) {
     return true;
 }
 
+bool AudioEngine::startRecording(double seconds) {
+    if (!status_.running || recState_.load() == 1) return false;
+    recLen_ = size_t(seconds * kRate);
+    rec_.assign(recLen_, 0.0f);
+    recPos_.store(0);
+    recState_.store(1, std::memory_order_release);
+    return true;
+}
+
+float AudioEngine::recordingProgress() const {
+    const int s = recState_.load(std::memory_order_acquire);
+    if (s == 2) return 1.0f;
+    if (s == 0 || recLen_ == 0) return 0.0f;
+    return float(recPos_.load(std::memory_order_acquire)) / float(recLen_);
+}
+
+std::vector<float> AudioEngine::takeRecording() {
+    if (recState_.load(std::memory_order_acquire) != 2) return {};
+    recState_.store(0);
+    return std::move(rec_);
+}
+
 void AudioEngine::setSpeaker(double hz, double confidence, double tractCm, double tractConf) {
     speakerHz_ = hz;
     speakerConf_ = confidence;
@@ -299,6 +321,7 @@ void AudioEngine::stop() {
     capture_.reset();
     render_.reset();
     monitor_.reset();
+    if (recState_.load() == 1) recState_.store(0);
     if (chain_ && chain_->speakerConfidence() > 0.0) {
         speakerHz_ = chain_->speakerF0();
         speakerConf_ = chain_->speakerConfidence();
@@ -353,6 +376,12 @@ void AudioEngine::captureLoop(Stream* st) {
             float pk = 0.0f;
             for (size_t i = 0; i < n; ++i) pk = std::max(pk, std::abs(buf[i]));
             inPeak = std::max(pk, inPeak * 0.85f);
+            if (recState_.load(std::memory_order_acquire) == 1) {
+                const size_t p = recPos_.load(std::memory_order_relaxed), m = std::min(n, recLen_ - p);
+                std::memcpy(rec_.data() + p, buf.data(), m * sizeof(float));
+                recPos_.store(p + m, std::memory_order_release);
+                if (p + m >= recLen_) recState_.store(2, std::memory_order_release);
+            }
             const auto t0 = std::chrono::steady_clock::now();
             chain_->process(buf.data(), n);
             const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

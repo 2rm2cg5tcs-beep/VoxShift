@@ -28,7 +28,15 @@ double besselI0(double x) {
     return s;
 }
 
-constexpr double kApOn = 0.25, kApOff = 0.40;   // YIN aperiodicity: start / keep voicing
+#ifndef PSOLA_AP_ON
+#define PSOLA_AP_ON 0.28
+#define PSOLA_AP_OFF 0.46
+#endif
+#ifndef PSOLA_LEARN_AP
+#define PSOLA_LEARN_AP 0.3
+#endif
+constexpr double kApOn = PSOLA_AP_ON, kApOff = PSOLA_AP_OFF;   // YIN aperiodicity: start / keep voicing
+constexpr double kLearnAp = PSOLA_LEARN_AP;                     // frames clear enough to learn the speaker from
 constexpr double kFmin = 58.0, kFmax = 700.0;
 }  // namespace
 
@@ -377,7 +385,7 @@ void PsolaVoice::analyseFrame(int64_t i) {
 #endif
     // the speaker model learns only from clear, loud voiced frames (not from
     // hum or murmur in the pauses)
-    if (raw && ap < 0.2 && rms > 0.15 * peakRms_) {
+    if (raw && ap < kLearnAp && rms > 0.15 * peakRms_) {
         updateSpeaker(f0);
         if ((i & 1) == 0) {  // vocal tract: every 10 ms is plenty
             const int N = int(lpcBuf_.size());

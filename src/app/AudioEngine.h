@@ -79,6 +79,12 @@ public:
     double vocalTractConfidence() const;
     double currentF0() const { return chain_ ? chain_->currentF0() : 0.0; }
 
+    // Voice test: records the raw microphone for a few seconds (UI thread).
+    bool startRecording(double seconds);
+    float recordingProgress() const;   // 0..1; 1 = finished
+    bool recordingActive() const { return recState_.load() == 1; }
+    std::vector<float> takeRecording();
+
 private:
     struct Stream;
     void captureLoop(Stream* st);
@@ -90,6 +96,10 @@ private:
     GlobalValues global_;
     bool enabled_ = true;
     double speakerHz_ = 0.0, speakerConf_ = 0.0, tractCm_ = 0.0, tractConf_ = 0.0;
+    std::vector<float> rec_;
+    size_t recLen_ = 0;
+    std::atomic<size_t> recPos_{0};
+    std::atomic<int> recState_{0};   // 0 idle, 1 recording, 2 done
 
     SpscRing outRing_, monRing_;
     std::unique_ptr<Stream> capture_, render_, monitor_;
