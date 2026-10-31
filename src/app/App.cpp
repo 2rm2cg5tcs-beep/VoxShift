@@ -44,12 +44,15 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
     else applyVoice(findPreset(cfg_.preset)->values, false);
     if (!cfg_.firstRunDone) requestTab_ = kPageSetup;
 
+    const bool headless = !screenshotDir_.empty();   // CI: never block on a message box
     if (!createWindow(inst)) {
-        MessageBoxW(nullptr, L"Не удалось создать окно Pressvppp.", kAppName, MB_ICONERROR);
+        logLine("createWindow failed (%lu)", GetLastError());
+        if (!headless) MessageBoxW(nullptr, L"Не удалось создать окно Pressvppp.", kAppName, MB_ICONERROR);
         return 1;
     }
     if (!createDevice()) {
-        MessageBoxW(nullptr, L"Не удалось инициализировать графику (Direct3D 11).", kAppName, MB_ICONERROR);
+        logLine("Direct3D 11 device creation failed");
+        if (!headless) MessageBoxW(nullptr, L"Не удалось инициализировать графику (Direct3D 11).", kAppName, MB_ICONERROR);
         return 1;
     }
 
@@ -92,7 +95,7 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
 
     while (running_) {
         const bool active = visible_ && !minimized_;
-        MsgWaitForMultipleObjects(0, nullptr, FALSE, (active && !occluded_) ? 33 : 250, QS_ALLINPUT);
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, !screenshotDir_.empty() ? 1 : ((active && !occluded_) ? 33 : 250), QS_ALLINPUT);
         MSG msg;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) running_ = false;
@@ -101,7 +104,7 @@ int App::run(HINSTANCE inst, bool startMinimized, const std::wstring& screenshot
         }
         if (!running_) break;
         periodic();
-        if (visible_ && !minimized_) renderFrame();
+        if ((visible_ && !minimized_) || !screenshotDir_.empty()) renderFrame();
     }
 
     ImGui_ImplDX11_Shutdown();
@@ -207,7 +210,7 @@ void App::setDpi(UINT dpi) {
 
 void App::renderFrame() {
     if (!rtv_) return;
-    if (occluded_) {
+    if (occluded_ && screenshotDir_.empty()) {
         if (swap_->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) return;
         occluded_ = false;
     }
@@ -236,14 +239,16 @@ void App::renderFrame() {
             if (sub == 5) {
                 wchar_t name[64];
                 swprintf(name, 64, L"\\tab%d.bmp", tab);
-                saveScreenshot(screenshotDir_ + name);
+                const bool ok = saveScreenshot(screenshotDir_ + name);
+                logLine("screenshot tab %d: %s", tab, ok ? "saved" : "FAILED");
             }
             ++screenshotStep_;
         }
     }
 
-    const HRESULT hr = swap_->Present(1, 0);
-    occluded_ = (hr == DXGI_STATUS_OCCLUDED);
+    // in CI the session may be locked/occluded: keep rendering for screenshots
+    const HRESULT hr = swap_->Present(screenshotDir_.empty() ? 1 : 0, 0);
+    occluded_ = screenshotDir_.empty() && hr == DXGI_STATUS_OCCLUDED;
 }
 
 bool App::saveScreenshot(const std::wstring& path) {

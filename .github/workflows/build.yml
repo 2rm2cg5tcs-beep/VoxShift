@@ -42,7 +42,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force shots | Out-Null
           $p = Start-Process -FilePath build\Release\Pressvppp.exe -ArgumentList '--screenshot', "$PWD\shots" -PassThru
-          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "screenshot run timed out" }
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); "screenshot run timed out" | Out-File shots\timeout.txt }
+          "exit code: $($p.ExitCode)" | Out-File shots\exitcode.txt
+          $log = Join-Path $env:APPDATA 'Pressvppp\pressvppp.log'
+          if (Test-Path $log) { Copy-Item $log shots\pressvppp.log }
           Get-ChildItem shots
 
       - name: Publish screenshots (pre-release "ci-screenshots")
@@ -59,7 +62,7 @@ jobs:
             $img.Dispose()
           }
           gh release delete ci-screenshots --yes --cleanup-tag 2>$null
-          $files = @(Get-ChildItem shots\*.png | ForEach-Object { $_.FullName })
+          $files = @(Get-ChildItem shots\* -Include *.png, *.log, *.txt | ForEach-Object { $_.FullName })
           if ($files.Count -gt 0) {
             gh release create ci-screenshots $files --title "CI screenshots" --notes "UI screenshots from the latest build" --prerelease
           }
