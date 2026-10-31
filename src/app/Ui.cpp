@@ -579,8 +579,8 @@ void App::uiVoiceMap() {
         const ImVec2 ts = g_fonts.caption->CalcTextSizeA(g_fonts.caption->FontSize, FLT_MAX, 0, r.name);
         dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), kMuted, r.name);
     }
-    dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x1 - S(118), y0), kDim, "↑ меньше горло");
-    dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x1 - S(118), y1 - S(16)), kDim, "↓ больше горло");
+    dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x1 - S(118), y0), kDim, "меньше горло");
+    dl->AddText(g_fonts.caption, g_fonts.caption->FontSize, ImVec2(x1 - S(118), y1 - S(16)), kDim, "больше горло");
 
     // the user's voice
     const double uHz = engine_.speakerF0(), uCm = engine_.vocalTract();
@@ -619,7 +619,8 @@ void App::uiVoiceMap() {
     if (hovered) {
         const ImVec2 m = ImGui::GetIO().MousePos;
         char tip[96];
-        std::snprintf(tip, sizeof tip, "%.0f Гц · %.1f см", hzAt(m.x), cmAt(m.y));
+        const double c = cmAt(m.y);
+        std::snprintf(tip, sizeof tip, "%.0f Гц · %d,%d см", hzAt(m.x), int(c), int(std::lround(c * 10.0)) % 10);
         ImGui::SetTooltip("%s", tip);
     }
 }
@@ -634,8 +635,9 @@ void App::uiVoiceBasics() {
         const double cm = engine_.vocalTract(), cmConf = engine_.vocalTractConfidence();
         char b[240];
         if (conf >= 100.0 && cmConf >= 50.0) {
-            std::snprintf(b, sizeof b, "Ваш голос: %.0f Гц, горло ≈ %.1f см. Нажмите на карту — голос станет таким, "
-                                       "правый клик — выключить.", hz, cm);
+            const int t10 = int(std::lround(cm * 10.0));
+            std::snprintf(b, sizeof b, "Ваш голос: %.0f Гц, горло ≈ %d,%d см. Нажмите на карту — голос станет таким, "
+                                       "правый клик — выключить.", hz, t10 / 10, t10 % 10);
         } else {
             std::snprintf(b, sizeof b, "Скажите несколько фраз — программа измерит ваш голос и покажет его на карте. "
                                        "Нажмите на карту, чтобы выбрать, кем звучать.");
