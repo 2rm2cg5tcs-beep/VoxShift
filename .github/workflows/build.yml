@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (MSVC, x64, static CRT)
+        run: cmake -S . -B build -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: DSP tests
+        run: build\Release\dsp_tests.exe
+
+      - name: Self-test of the app (audio chain + device enumeration)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath build\Release\Pressvppp.exe -ArgumentList '--selftest' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "selftest failed: $($p.ExitCode)" }
+          "selftest OK"
+
+      - name: UI screenshots (every page)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force shots | Out-Null
+          $p = Start-Process -FilePath build\Release\Pressvppp.exe -ArgumentList '--screenshot', "$PWD\shots" -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "screenshot run timed out" }
+          Get-ChildItem shots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: shots/*.bmp
+          if-no-files-found: ignore
+
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc installer\Pressvppp.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pressvppp_Setup
+          path: Output/Pressvppp_Setup.exe
+
+      - name: Publish "latest" release (direct download link)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item build\Release\Pressvppp.exe Pressvppp_portable.exe
+          gh release delete latest --yes --cleanup-tag 2>$null
+          $global:LASTEXITCODE = 0
+          $notes = "Автоматическая сборка из main ($env:GITHUB_SHA).`n`nPressvppp_Setup.exe — установщик (рекомендуется).`nPressvppp_portable.exe — запуск без установки."
+          gh release create latest Output/Pressvppp_Setup.exe Pressvppp_portable.exe --title "Pressvppp — последняя сборка" --notes $notes --latest
